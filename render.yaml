@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: omie-dashboard-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SYNC_INTERVAL_MINUTES
+        value: "30"
+      - key: ACCESS_TOKEN_EXPIRE_HOURS
+        value: "12"
