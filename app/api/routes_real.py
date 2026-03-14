@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.integrations.omie.integration_module import init_db, sync_all_modules
 from app.services.kpis import KPIService
 
-from app.integrations.omie.integration_module import ContaReceber, ContaPagar
+from app.integrations.omie.integration_module import ContaReceber, ContaPagar, PedidoVenda, Oportunidade
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -79,5 +79,41 @@ def debug_pagar_first(db: Session = Depends(get_db)):
         "valor_saldo": float(row.valor_saldo or 0),
         "data_vencimento": row.data_vencimento,
         "nome_fornecedor": row.nome_fornecedor,
+        "payload_json": row.payload_json,
+    }
+
+@router.get("/debug/pedidos/first")
+def debug_pedidos_first(db: Session = Depends(get_db)):
+    row = db.query(PedidoVenda).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "numero_pedido": row.numero_pedido,
+        "cliente": row.cliente,
+        "etapa": row.etapa,
+        "status": row.status,
+        "data_emissao": row.data_emissao,
+        "valor_total": float(row.valor_total or 0),
+        "payload_json": row.payload_json,
+    }
+
+
+@router.get("/debug/oportunidades/first")
+def debug_oportunidades_first(db: Session = Depends(get_db)):
+    row = db.query(Oportunidade).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "titulo": row.titulo,
+        "cliente": row.cliente,
+        "etapa": row.etapa,
+        "vendedor": row.vendedor,
+        "previsao_fechamento": row.previsao_fechamento,
+        "valor_total": float(row.valor_total or 0),
+        "probabilidade": float(row.probabilidade or 0),
+        "valor_ponderado": float(row.valor_ponderado or 0),
+        "status": row.status,
         "payload_json": row.payload_json,
     }
