@@ -334,37 +334,20 @@ def normalize_pedido(item: Dict[str, Any]) -> Dict[str, Any]:
 def normalize_conta_corrente(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "omie_id": _safe_str(
-            item.get("codigo")
+            item.get("nCodCC")
             or item.get("codigo_conta_corrente")
-            or item.get("nCodCC")
+            or item.get("codigo")
             or item.get("id")
         ),
-        "codigo_banco": _safe_str(
-            item.get("codigo_banco")
-            or item.get("nCodBanco")
-            or item.get("banco_codigo")
-        ),
-        "banco": _safe_str(
-            item.get("nome_banco")
-            or item.get("banco")
-            or item.get("descricao_banco")
-        ),
-        "agencia": _safe_str(item.get("agencia") or item.get("conta_agencia")),
-        "conta": _safe_str(item.get("conta_corrente") or item.get("conta") or item.get("numero_conta")),
-        "descricao": _safe_str(
-            item.get("descricao")
-            or item.get("descricao_conta")
-            or item.get("nome")
-        ),
-        "saldo": _safe_float(
-            item.get("saldo")
-            or item.get("saldo_atual")
-            or item.get("valor_saldo")
-        ),
-        "status": _safe_str(item.get("status") or item.get("ativo")),
+        "codigo_banco": _safe_str(item.get("codigo_banco")),
+        "banco": _safe_str(item.get("descricao")),
+        "agencia": _safe_str(item.get("codigo_agencia")),
+        "conta": _safe_str(item.get("numero_conta_corrente")),
+        "descricao": _safe_str(item.get("descricao")),
+        "saldo": _safe_float(item.get("saldo_inicial")),
+        "status": "INATIVO" if item.get("inativo") == "S" else "ATIVO",
         "payload_json": str(item),
     }
-
 
 def upsert_conta_receber(db: Session, normalized: Dict[str, Any]) -> None:
     existing = db.query(ContaReceber).filter(ContaReceber.omie_id == normalized["omie_id"]).first()
