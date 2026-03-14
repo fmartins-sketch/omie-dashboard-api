@@ -9,7 +9,15 @@ from app.db.session import get_db
 from app.integrations.omie.integration_module import init_db, sync_all_modules
 from app.services.kpis import KPIService
 
-from app.integrations.omie.integration_module import ContaReceber, ContaPagar, PedidoVenda, Oportunidade
+from app.integrations.omie.integration_module import (
+    ContaReceber,
+    ContaPagar,
+    PedidoVenda,
+    Oportunidade,
+    OmieClient,
+    OMIE_APP_KEY,
+    OMIE_APP_SECRET,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -117,3 +125,14 @@ def debug_oportunidades_first(db: Session = Depends(get_db)):
         "status": row.status,
         "payload_json": row.payload_json,
     }
+
+@router.get("/debug/omie/pedidos/raw")
+async def debug_omie_pedidos_raw():
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    return await client.listar_pedidos_venda(pagina=1, registros_por_pagina=5)
+
+
+@router.get("/debug/omie/oportunidades/raw")
+async def debug_omie_oportunidades_raw():
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    return await client.listar_oportunidades(pagina=1, registros_por_pagina=5)
