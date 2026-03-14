@@ -86,6 +86,23 @@ class PedidoVenda(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ContaCorrente(Base):
+    __tablename__ = "contas_correntes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    omie_id = Column(String(100), unique=True, index=True, nullable=False)
+    codigo_banco = Column(String(50), nullable=True)
+    banco = Column(String(255), nullable=True)
+    agencia = Column(String(50), nullable=True)
+    conta = Column(String(100), nullable=True)
+    descricao = Column(String(255), nullable=True)
+    saldo = Column(Numeric(15, 2), nullable=True)
+    status = Column(String(50), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
@@ -160,6 +177,16 @@ class OmieClient:
                 "pagina": pagina,
                 "registros_por_pagina": registros_por_pagina,
                 "apenas_importado_api": "N",
+            }],
+        )
+
+    async def listar_contas_correntes(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="geral/contacorrente",
+            call="ListarContasCorrentes",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
             }],
         )
 
@@ -304,6 +331,41 @@ def normalize_pedido(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def normalize_conta_corrente(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "omie_id": _safe_str(
+            item.get("codigo")
+            or item.get("codigo_conta_corrente")
+            or item.get("nCodCC")
+            or item.get("id")
+        ),
+        "codigo_banco": _safe_str(
+            item.get("codigo_banco")
+            or item.get("nCodBanco")
+            or item.get("banco_codigo")
+        ),
+        "banco": _safe_str(
+            item.get("nome_banco")
+            or item.get("banco")
+            or item.get("descricao_banco")
+        ),
+        "agencia": _safe_str(item.get("agencia") or item.get("conta_agencia")),
+        "conta": _safe_str(item.get("conta_corrente") or item.get("conta") or item.get("numero_conta")),
+        "descricao": _safe_str(
+            item.get("descricao")
+            or item.get("descricao_conta")
+            or item.get("nome")
+        ),
+        "saldo": _safe_float(
+            item.get("saldo")
+            or item.get("saldo_atual")
+            or item.get("valor_saldo")
+        ),
+        "status": _safe_str(item.get("status") or item.get("ativo")),
+        "payload_json": str(item),
+    }
+
+
 def upsert_conta_receber(db: Session, normalized: Dict[str, Any]) -> None:
     existing = db.query(ContaReceber).filter(ContaReceber.omie_id == normalized["omie_id"]).first()
     if existing:
@@ -338,6 +400,15 @@ def upsert_pedido(db: Session, normalized: Dict[str, Any]) -> None:
             setattr(existing, key, value)
     else:
         db.add(PedidoVenda(**normalized))
+
+
+def upsert_conta_corrente(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(ContaCorrente).filter(ContaCorrente.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(ContaCorrente(**normalized))
 
 
 async def sync_contas_receber(db: Session, client: OmieClient, paginas: int = 3) -> int:
@@ -396,6 +467,26 @@ async def sync_pedidos(db: Session, client: OmieClient, paginas: int = 3) -> int
     return total
 
 
+async def sync_contas_correntes(db: Session, client: OmieClient, paginas: int = 2) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_contas_correntes(pagina=pagina)
+        items = (
+            data.get("lista")
+            or data.get("cadastros")
+            or data.get("conta_corrente_cadastro")
+            or data.get("lista_contas_correntes")
+            or []
+        )
+        for item in items:
+            normalized = normalize_conta_corrente(item)
+            if normalized["omie_id"]:
+                upsert_conta_corrente(db, normalized)
+                total += 1
+    db.commit()
+    return total
+
+
 async def sync_all_modules() -> Dict[str, int]:
     init_db()
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
@@ -405,11 +496,13 @@ async def sync_all_modules() -> Dict[str, int]:
         pagar = await sync_contas_pagar(db, client)
         oportunidades = await sync_oportunidades(db, client)
         pedidos = await sync_pedidos(db, client)
+        contas_correntes = await sync_contas_correntes(db, client)
         return {
             "receber": receber,
             "pagar": pagar,
             "oportunidades": oportunidades,
             "pedidos": pedidos,
+            "contas_correntes": contas_correntes,
         }
     finally:
         db.close()
