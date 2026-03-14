@@ -10,6 +10,7 @@ from app.integrations.omie.integration_module import (
     ContaPagar,
     PedidoVenda,
     Oportunidade,
+    ContaCorrente,
     OmieClient,
     OMIE_APP_KEY,
     OMIE_APP_SECRET,
@@ -79,7 +80,12 @@ def get_resumo_executivo(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "receber_30": ceo.get("receber_30", 0),
             "pagar_30": ceo.get("pagar_30", 0),
             "inadimplencia": ceo.get("inadimplencia", 0),
+            "dividas_total": financeiro.get("dividas_total", 0),
+            "dividas_vencidas": financeiro.get("dividas_vencidas", 0),
+            "saldo_total_contas": financeiro.get("saldo_total_contas", 0),
+            "caixa_liquido": financeiro.get("caixa_liquido", 0),
             "top_inadimplentes": financeiro.get("top_inadimplentes", []),
+            "top_obrigacoes": financeiro.get("top_obrigacoes", []),
         },
         "comercial": {
             "pipeline_bruto": comercial.get("pipeline_bruto", 0),
@@ -157,6 +163,23 @@ def debug_oportunidades_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
     }
 
 
+@router.get("/debug/contas-correntes/first")
+def debug_contas_correntes_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    row = db.query(ContaCorrente).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "banco": row.banco,
+        "agencia": row.agencia,
+        "conta": row.conta,
+        "descricao": row.descricao,
+        "saldo": float(row.saldo or 0),
+        "status": row.status,
+        "payload_json": row.payload_json,
+    }
+
+
 @router.get("/debug/omie/pedidos/raw")
 async def debug_omie_pedidos_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
@@ -167,3 +190,9 @@ async def debug_omie_pedidos_raw() -> Dict[str, Any]:
 async def debug_omie_oportunidades_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
     return await client.listar_oportunidades(pagina=1, registros_por_pagina=5)
+
+
+@router.get("/debug/omie/contas-correntes/raw")
+async def debug_omie_contas_correntes_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    return await client.listar_contas_correntes(pagina=1, registros_por_pagina=10)
