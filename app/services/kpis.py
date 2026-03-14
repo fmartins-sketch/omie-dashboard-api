@@ -1,346 +1,169 @@
-from datetime import date, datetime
-from decimal import Decimal
-from typing import Any, Dict, List, Optional
-
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import Dict, Any
 
+from app.db.session import get_db
 from app.integrations.omie.integration_module import (
-    ContaPagar,
+    init_db,
+    sync_all_modules,
     ContaReceber,
-    Oportunidade,
+    ContaPagar,
     PedidoVenda,
+    Oportunidade,
+    OmieClient,
+    OMIE_APP_KEY,
+    OMIE_APP_SECRET,
 )
+from app.services.kpis import KPIService
 
-FIXED_COST_CATEGORIES = {
-    "ALUGUEL",
-    "SALARIOS_ADMIN",
-    "HONORARIOS",
-    "SOFTWARES",
-    "CONTABILIDADE",
-    "INTERNET",
-    "SERVICOS_RECORRENTES",
-}
-
-VARIABLE_COST_CATEGORIES = {
-    "COMISSOES",
-    "FRETES",
-    "CUSTO_MERCADORIA",
-    "IMPOSTOS_VENDA",
-    "SERVICOS_TERCEIROS_VARIAVEIS",
-}
-
-INVESTMENT_CATEGORIES = {
-    "INVESTIMENTO",
-    "CAPEX",
-    "EQUIPAMENTOS",
-    "IMPLANTACAO",
-}
+router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
 
-def _to_float(value: Any) -> float:
-    if value is None:
-        return 0.0
-    if isinstance(value, Decimal):
-        return float(value)
+@router.get("/health")
+def healthcheck() -> Dict[str, str]:
+    return {"status": "ok"}
+
+
+@router.on_event("startup")
+def startup_init() -> None:
+    init_db()
+
+
+@router.get("/dashboard/ceo-real")
+def get_ceo_dashboard_real(
+    empresa: str = "consolidado",
+    periodo: str = "mes_atual",
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    service = KPIService(db)
+    return service.ceo_dashboard(empresa=empresa, periodo=periodo)
+
+
+@router.get("/dashboard/financeiro-real")
+def get_financeiro_dashboard_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    service = KPIService(db)
+    return service.financeiro_dashboard()
+
+
+@router.get("/dashboard/comercial-real")
+def get_comercial_dashboard_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    service = KPIService(db)
+    return service.comercial_dashboard()
+
+
+@router.post("/sync/omie/full")
+async def run_full_sync() -> Dict[str, Any]:
     try:
-        return float(value)
-    except Exception:
-        return 0.0
-
-
-def _safe_div(numerator: float, denominator: float) -> float:
-    return 0.0 if not denominator else numerator / denominator
-
-
-def _days_until(target_date_str: Optional[str]) -> Optional[int]:
-    if not target_date_str:
-        return None
-
-    raw = str(target_date_str).strip()
-
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            target = datetime.strptime(raw[:19], fmt).date()
-            return (target - date.today()).days
-        except Exception:
-            pass
-
-    return None
-
-
-class KPIService:
-    def __init__(self, db: Session):
-        self.db = db
-
-    def total_receber_em_aberto(self) -> float:
-        total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
-            status = (row.status_titulo or "").upper()
-            if status not in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
-                total += _to_float(row.valor_saldo or row.valor_documento)
-        return round(total, 2)
-
-    def total_pagar_em_aberto(self) -> float:
-        total = 0.0
-        rows = self.db.query(ContaPagar).all()
-        for row in rows:
-            status = (row.status_titulo or "").upper()
-            if status not in {"PAGO", "CANCELADO", "BAIXADO"}:
-                total += _to_float(row.valor_saldo or row.valor_documento)
-        return round(total, 2)
-
-    def faturamento_total_pedidos(self) -> float:
-        return round(sum(_to_float(row.valor_total) for row in self.db.query(PedidoVenda).all()), 2)
-
-    def pipeline_bruto(self) -> float:
-        return round(sum(_to_float(row.valor_total) for row in self.db.query(Oportunidade).all()), 2)
-
-    def pipeline_ponderado(self) -> float:
-        return round(sum(_to_float(row.valor_ponderado) for row in self.db.query(Oportunidade).all()), 2)
-
-    def _aging_receber_rows(self) -> List[ContaReceber]:
-        rows = []
-        for row in self.db.query(ContaReceber).all():
-            status = (row.status_titulo or "").upper()
-            if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
-                continue
-            rows.append(row)
-        return rows
-
-    def _aging_pagar_rows(self) -> List[ContaPagar]:
-        rows = []
-        for row in self.db.query(ContaPagar).all():
-            status = (row.status_titulo or "").upper()
-            if status in {"PAGO", "CANCELADO", "BAIXADO"}:
-                continue
-            rows.append(row)
-        return rows
-
-    def aging_receber(self) -> List[Dict[str, Any]]:
-        return self._aging(self._aging_receber_rows(), use_documento_if_zero=True)
-
-    def aging_pagar(self) -> List[Dict[str, Any]]:
-        return self._aging(self._aging_pagar_rows(), use_documento_if_zero=True)
-
-    def _aging(self, rows: List[Any], use_documento_if_zero: bool = False) -> List[Dict[str, Any]]:
-        buckets = {
-            "A vencer": 0.0,
-            "1-30": 0.0,
-            "31-60": 0.0,
-            "61-90": 0.0,
-            "+90": 0.0,
-        }
-
-        for row in rows:
-            days = _days_until(row.data_vencimento)
-            valor = _to_float(row.valor_saldo)
-
-            if use_documento_if_zero and valor == 0:
-                valor = _to_float(row.valor_documento)
-
-            if days is None:
-                continue
-
-            if days >= 0:
-                buckets["A vencer"] += valor
-            else:
-                overdue = abs(days)
-                if overdue <= 30:
-                    buckets["1-30"] += valor
-                elif overdue <= 60:
-                    buckets["31-60"] += valor
-                elif overdue <= 90:
-                    buckets["61-90"] += valor
-                else:
-                    buckets["+90"] += valor
-
-        return [{"label": k, "value": round(v, 2)} for k, v in buckets.items()]
-
-    def inadimplencia_total(self) -> float:
-        total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
-            status = (row.status_titulo or "").upper()
-            if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
-                continue
-
-            days = _days_until(row.data_vencimento)
-            valor = _to_float(row.valor_saldo or row.valor_documento)
-
-            if days is not None and days < 0:
-                total += valor
-
-        return round(total, 2)
-
-    def receber_horizonte(self, max_days: int) -> float:
-        total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
-            status = (row.status_titulo or "").upper()
-            if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
-                continue
-
-            days = _days_until(row.data_vencimento)
-            valor = _to_float(row.valor_saldo or row.valor_documento)
-
-            if days is not None and 0 <= days <= max_days:
-                total += valor
-
-        return round(total, 2)
-
-    def pagar_horizonte(self, max_days: int) -> float:
-        total = 0.0
-        rows = self.db.query(ContaPagar).all()
-        for row in rows:
-            status = (row.status_titulo or "").upper()
-            if status in {"PAGO", "CANCELADO", "BAIXADO"}:
-                continue
-
-            days = _days_until(row.data_vencimento)
-            valor = _to_float(row.valor_saldo or row.valor_documento)
-
-            if days is not None and 0 <= days <= max_days:
-                total += valor
-
-        return round(total, 2)
-
-    def top_inadimplentes(self, limit: int = 10) -> List[Dict[str, Any]]:
-        grouped: Dict[str, float] = {}
-        for row in self.db.query(ContaReceber).all():
-            status = (row.status_titulo or "").upper()
-            if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
-                continue
-
-            days = _days_until(row.data_vencimento)
-            if days is not None and days < 0:
-                nome = row.nome_cliente or row.codigo_cliente or "Sem nome"
-                grouped[nome] = grouped.get(nome, 0.0) + _to_float(row.valor_saldo or row.valor_documento)
-
-        return [
-            {"cliente": k, "valor": round(v, 2)}
-            for k, v in sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
-        ]
-
-    def receita_liquida(self) -> float:
-        return self.faturamento_total_pedidos()
-
-    def custos_variaveis(self) -> float:
-        total = 0.0
-        for row in self.db.query(ContaPagar).all():
-            if (row.categoria or "").upper() in VARIABLE_COST_CATEGORIES:
-                total += _to_float(row.valor_documento)
-        return round(total, 2)
-
-    def custos_fixos(self) -> float:
-        total = 0.0
-        for row in self.db.query(ContaPagar).all():
-            if (row.categoria or "").upper() in FIXED_COST_CATEGORIES:
-                total += _to_float(row.valor_documento)
-        return round(total, 2)
-
-    def investimentos(self) -> float:
-        total = 0.0
-        for row in self.db.query(ContaPagar).all():
-            if (row.categoria or "").upper() in INVESTMENT_CATEGORIES:
-                total += _to_float(row.valor_documento)
-        return round(total, 2)
-
-    def margem_contribuicao(self) -> float:
-        return round(self.receita_liquida() - self.custos_variaveis(), 2)
-
-    def margem_contribuicao_percentual(self) -> float:
-        return round(_safe_div(self.margem_contribuicao(), self.receita_liquida()) * 100, 2)
-
-    def ebitda(self) -> float:
-        return round(self.receita_liquida() - self.custos_variaveis() - self.custos_fixos(), 2)
-
-    def margem_ebitda(self) -> float:
-        return round(_safe_div(self.ebitda(), self.receita_liquida()) * 100, 2)
-
-    def ponto_equilibrio(self) -> float:
-        indice_mc = self.margem_contribuicao_percentual() / 100
-        return 0.0 if indice_mc <= 0 else round(self.custos_fixos() / indice_mc, 2)
-
-    def margem_seguranca(self) -> float:
-        return round(self.receita_liquida() - self.ponto_equilibrio(), 2)
-
-    def roi(self) -> float:
-        investimento = self.investimentos()
-        return 0.0 if investimento <= 0 else round(((self.ebitda() - investimento) / investimento) * 100, 2)
-
-    def ticket_medio(self) -> float:
-        count = self.db.query(PedidoVenda).count()
-        return round(_safe_div(self.faturamento_total_pedidos(), count), 2)
-
-    def total_oportunidades_abertas(self) -> int:
-        return self.db.query(Oportunidade).count()
-
-    def funil_comercial(self) -> List[Dict[str, Any]]:
-        grouped: Dict[str, int] = {}
-        for row in self.db.query(Oportunidade).all():
-            etapa = row.etapa or "Sem etapa"
-            grouped[etapa] = grouped.get(etapa, 0) + 1
-        return [{"fase": k, "quantidade": v} for k, v in grouped.items()]
-
-    def top_vendedores(self, limit: int = 10) -> List[Dict[str, Any]]:
-        grouped: Dict[str, Dict[str, Any]] = {}
-        for row in self.db.query(Oportunidade).all():
-            vendedor = row.vendedor or "Sem vendedor"
-            grouped.setdefault(vendedor, {"nome": vendedor, "receita": 0.0, "pipeline": 0.0, "qtd": 0})
-            grouped[vendedor]["receita"] += _to_float(row.valor_total)
-            grouped[vendedor]["pipeline"] += _to_float(row.valor_ponderado)
-            grouped[vendedor]["qtd"] += 1
-        return sorted(grouped.values(), key=lambda x: x["pipeline"], reverse=True)[:limit]
-
-    def top_clientes(self, limit: int = 10) -> List[Dict[str, Any]]:
-        grouped: Dict[str, float] = {}
-        for row in self.db.query(PedidoVenda).all():
-            cliente = row.cliente or "Sem cliente"
-            grouped[cliente] = grouped.get(cliente, 0.0) + _to_float(row.valor_total)
-        return [{"nome": k, "receita": round(v, 2)} for k, v in sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]]
-
-    def ceo_dashboard(self, empresa: str = "consolidado", periodo: str = "mes_atual") -> Dict[str, Any]:
+        result = await sync_all_modules()
         return {
-            "empresa": empresa,
-            "periodo": periodo,
-            "faturamento_mes": self.receita_liquida(),
-            "receita_liquida": self.receita_liquida(),
-            "ebitda": self.ebitda(),
-            "margem_ebitda": self.margem_ebitda(),
-            "caixa_disponivel": round(self.total_receber_em_aberto() - self.total_pagar_em_aberto(), 2),
-            "receber_30": self.receber_horizonte(30),
-            "pagar_30": self.pagar_horizonte(30),
-            "pipeline_ponderado": self.pipeline_ponderado(),
-            "custo_fixo": self.custos_fixos(),
-            "ponto_equilibrio": self.ponto_equilibrio(),
-            "margem_seguranca": self.margem_seguranca(),
-            "inadimplencia": self.inadimplencia_total(),
-            "roi": self.roi(),
-            "ticket_medio": self.ticket_medio(),
-            "atualizado_em": datetime.utcnow().isoformat(),
+            "status": "ok",
+            "message": "Sincronização concluída com sucesso.",
+            "synced": result,
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao sincronizar Omie: {str(exc)}")
 
-    def financeiro_dashboard(self) -> Dict[str, Any]:
-        return {
-            "receber_aging": self.aging_receber(),
-            "pagar_aging": self.aging_pagar(),
-            "fluxo_caixa": [
-                {"horizonte": "7 dias", "receber": self.receber_horizonte(7), "pagar": self.pagar_horizonte(7)},
-                {"horizonte": "15 dias", "receber": self.receber_horizonte(15), "pagar": self.pagar_horizonte(15)},
-                {"horizonte": "30 dias", "receber": self.receber_horizonte(30), "pagar": self.pagar_horizonte(30)},
-                {"horizonte": "60 dias", "receber": self.receber_horizonte(60), "pagar": self.pagar_horizonte(60)},
-            ],
-            "top_inadimplentes": self.top_inadimplentes(),
-        }
 
-    def comercial_dashboard(self) -> Dict[str, Any]:
-        return {
-            "funil": self.funil_comercial(),
-            "vendedores": self.top_vendedores(),
-            "clientes": self.top_clientes(),
-            "pipeline_bruto": self.pipeline_bruto(),
-            "pipeline_ponderado": self.pipeline_ponderado(),
-            "oportunidades_abertas": self.total_oportunidades_abertas(),
-            "ticket_medio": self.ticket_medio(),
-        }
+@router.get("/dashboard/resumo-executivo")
+def get_resumo_executivo(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    service = KPIService(db)
+    ceo = service.ceo_dashboard()
+    financeiro = service.financeiro_dashboard()
+    comercial = service.comercial_dashboard()
+
+    return {
+        "ceo": ceo,
+        "financeiro": {
+            "receber_30": ceo.get("receber_30", 0),
+            "pagar_30": ceo.get("pagar_30", 0),
+            "inadimplencia": ceo.get("inadimplencia", 0),
+            "top_inadimplentes": financeiro.get("top_inadimplentes", []),
+        },
+        "comercial": {
+            "pipeline_bruto": comercial.get("pipeline_bruto", 0),
+            "pipeline_ponderado": comercial.get("pipeline_ponderado", 0),
+            "oportunidades_abertas": comercial.get("oportunidades_abertas", 0),
+            "ticket_medio": comercial.get("ticket_medio", 0),
+        },
+    }
+
+
+@router.get("/debug/receber/first")
+def debug_receber_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    row = db.query(ContaReceber).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "valor_documento": float(row.valor_documento or 0),
+        "valor_saldo": float(row.valor_saldo or 0),
+        "data_vencimento": row.data_vencimento,
+        "nome_cliente": row.nome_cliente,
+        "payload_json": row.payload_json,
+    }
+
+
+@router.get("/debug/pagar/first")
+def debug_pagar_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    row = db.query(ContaPagar).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "valor_documento": float(row.valor_documento or 0),
+        "valor_saldo": float(row.valor_saldo or 0),
+        "data_vencimento": row.data_vencimento,
+        "nome_fornecedor": row.nome_fornecedor,
+        "payload_json": row.payload_json,
+    }
+
+
+@router.get("/debug/pedidos/first")
+def debug_pedidos_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    row = db.query(PedidoVenda).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "numero_pedido": row.numero_pedido,
+        "cliente": row.cliente,
+        "etapa": row.etapa,
+        "status": row.status,
+        "data_emissao": row.data_emissao,
+        "valor_total": float(row.valor_total or 0),
+        "payload_json": row.payload_json,
+    }
+
+
+@router.get("/debug/oportunidades/first")
+def debug_oportunidades_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    row = db.query(Oportunidade).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "titulo": row.titulo,
+        "cliente": row.cliente,
+        "etapa": row.etapa,
+        "vendedor": row.vendedor,
+        "previsao_fechamento": row.previsao_fechamento,
+        "valor_total": float(row.valor_total or 0),
+        "probabilidade": float(row.probabilidade or 0),
+        "valor_ponderado": float(row.valor_ponderado or 0),
+        "status": row.status,
+        "payload_json": row.payload_json,
+    }
+
+
+@router.get("/debug/omie/pedidos/raw")
+async def debug_omie_pedidos_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    return await client.listar_pedidos_venda(pagina=1, registros_por_pagina=5)
+
+
+@router.get("/debug/omie/oportunidades/raw")
+async def debug_omie_oportunidades_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    return await client.listar_oportunidades(pagina=1, registros_por_pagina=5)
