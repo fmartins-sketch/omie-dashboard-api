@@ -1,15 +1,11 @@
-from typing import Any, Dict
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
-from fastapi import Depends
+from typing import Dict, Any
 
 from app.db.session import get_db
-from app.integrations.omie.integration_module import init_db, sync_all_modules
-from app.services.kpis import KPIService
-
 from app.integrations.omie.integration_module import (
+    init_db,
+    sync_all_modules,
     ContaReceber,
     ContaPagar,
     PedidoVenda,
@@ -18,6 +14,7 @@ from app.integrations.omie.integration_module import (
     OMIE_APP_KEY,
     OMIE_APP_SECRET,
 )
+from app.services.kpis import KPIService
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -27,19 +24,46 @@ def healthcheck() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@router.on_event("startup")
+def startup_init() -> None:
+    init_db()
+
+
 @router.get("/dashboard/ceo-real")
-def get_ceo_dashboard_real(empresa: str = "consolidado", periodo: str = "mes_atual", db: Session = Depends(get_db)) -> Dict[str, Any]:
-    return KPIService(db).ceo_dashboard(empresa=empresa, periodo=periodo)
+def get_ceo_dashboard_real(
+    empresa: str = "consolidado",
+    periodo: str = "mes_atual",
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    service = KPIService(db)
+    return service.ceo_dashboard(empresa=empresa, periodo=periodo)
 
 
 @router.get("/dashboard/financeiro-real")
 def get_financeiro_dashboard_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    return KPIService(db).financeiro_dashboard()
+    service = KPIService(db)
+    return service.financeiro_dashboard()
 
 
 @router.get("/dashboard/comercial-real")
 def get_comercial_dashboard_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    return KPIService(db).comercial_dashboard()
+    service = KPIService(db)
+    return service.comercial_dashboard()
+
+
+@router.post("/sync/omie/full")
+async def run_full_sync() -> Dict[str, Any]:
+    try:
+        result = await sync_all_modules()
+        return {
+            "status": "ok",
+            "message": "Sincronização concluída com sucesso.",
+            "synced": result,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao sincronizar Omie: {str(exc)}")
 
 
 @router.get("/dashboard/resumo-executivo")
@@ -48,21 +72,26 @@ def get_resumo_executivo(db: Session = Depends(get_db)) -> Dict[str, Any]:
     ceo = service.ceo_dashboard()
     financeiro = service.financeiro_dashboard()
     comercial = service.comercial_dashboard()
+
     return {
         "ceo": ceo,
-        "financeiro": {"receber_30": ceo["receber_30"], "pagar_30": ceo["pagar_30"], "inadimplencia": ceo["inadimplencia"], "top_inadimplentes": financeiro["top_inadimplentes"]},
-        "comercial": {"pipeline_bruto": comercial["pipeline_bruto"], "pipeline_ponderado": comercial["pipeline_ponderado"], "oportunidades_abertas": comercial["oportunidades_abertas"], "ticket_medio": comercial["ticket_medio"]},
+        "financeiro": {
+            "receber_30": ceo.get("receber_30", 0),
+            "pagar_30": ceo.get("pagar_30", 0),
+            "inadimplencia": ceo.get("inadimplencia", 0),
+            "top_inadimplentes": financeiro.get("top_inadimplentes", []),
+        },
+        "comercial": {
+            "pipeline_bruto": comercial.get("pipeline_bruto", 0),
+            "pipeline_ponderado": comercial.get("pipeline_ponderado", 0),
+            "oportunidades_abertas": comercial.get("oportunidades_abertas", 0),
+            "ticket_medio": comercial.get("ticket_medio", 0),
+        },
     }
 
 
-@router.post("/sync/omie/full")
-async def run_full_sync() -> Dict[str, Any]:
-    try:
-        return {"status": "ok", "message": "Sincronização concluída com sucesso.", "synced": await sync_all_modules()}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Erro ao sincronizar Omie: {str(exc)}") from exc
 @router.get("/debug/receber/first")
-def debug_receber_first(db: Session = Depends(get_db)):
+def debug_receber_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
     row = db.query(ContaReceber).first()
     if not row:
         return {"message": "nenhum registro"}
@@ -77,7 +106,7 @@ def debug_receber_first(db: Session = Depends(get_db)):
 
 
 @router.get("/debug/pagar/first")
-def debug_pagar_first(db: Session = Depends(get_db)):
+def debug_pagar_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
     row = db.query(ContaPagar).first()
     if not row:
         return {"message": "nenhum registro"}
@@ -90,8 +119,9 @@ def debug_pagar_first(db: Session = Depends(get_db)):
         "payload_json": row.payload_json,
     }
 
+
 @router.get("/debug/pedidos/first")
-def debug_pedidos_first(db: Session = Depends(get_db)):
+def debug_pedidos_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
     row = db.query(PedidoVenda).first()
     if not row:
         return {"message": "nenhum registro"}
@@ -108,7 +138,7 @@ def debug_pedidos_first(db: Session = Depends(get_db)):
 
 
 @router.get("/debug/oportunidades/first")
-def debug_oportunidades_first(db: Session = Depends(get_db)):
+def debug_oportunidades_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
     row = db.query(Oportunidade).first()
     if not row:
         return {"message": "nenhum registro"}
@@ -126,13 +156,14 @@ def debug_oportunidades_first(db: Session = Depends(get_db)):
         "payload_json": row.payload_json,
     }
 
+
 @router.get("/debug/omie/pedidos/raw")
-async def debug_omie_pedidos_raw():
+async def debug_omie_pedidos_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
     return await client.listar_pedidos_venda(pagina=1, registros_por_pagina=5)
 
 
 @router.get("/debug/omie/oportunidades/raw")
-async def debug_omie_oportunidades_raw():
+async def debug_omie_oportunidades_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
     return await client.listar_oportunidades(pagina=1, registros_por_pagina=5)
