@@ -29,21 +29,33 @@ def _safe_div(numerator: float, denominator: float) -> float:
 def _days_until(target_date_str: Optional[str]) -> Optional[int]:
     if not target_date_str:
         return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+
+    raw = str(target_date_str).strip()
+
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S"):
         try:
-            target = datetime.strptime(target_date_str[:10], fmt).date()
+            target = datetime.strptime(raw[:19], fmt).date()
             return (target - date.today()).days
         except Exception:
             pass
-    return None
 
+    return None
 
 class KPIService:
     def __init__(self, db: Session):
         self.db = db
 
     def total_receber_em_aberto(self) -> float:
-        return round(sum(_to_float(row.valor_saldo) for row in self.db.query(ContaReceber).all()), 2)
+    if ContaReceber is None:
+        return 0.0
+
+    total = 0.0
+    rows = self.db.query(ContaReceber).all()
+    for row in rows:
+        status = (row.status_titulo or "").upper()
+        if status not in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
+            total += _to_float(row.valor_saldo or row.valor_documento)
+    return round(total, 2)
 
     def total_pagar_em_aberto(self) -> float:
         return round(sum(_to_float(row.valor_saldo) for row in self.db.query(ContaPagar).all()), 2)
@@ -85,21 +97,43 @@ class KPIService:
         return [{"label": k, "value": round(v, 2)} for k, v in buckets.items()]
 
     def inadimplencia_total(self) -> float:
-        total = 0.0
-        for row in self.db.query(ContaReceber).all():
-            days = _days_until(row.data_vencimento)
-            if days is not None and days < 0:
-                total += _to_float(row.valor_saldo)
-        return round(total, 2)
+    if ContaReceber is None:
+        return 0.0
 
-    def receber_horizonte(self, max_days: int) -> float:
-        total = 0.0
-        for row in self.db.query(ContaReceber).all():
-            days = _days_until(row.data_vencimento)
-            if days is not None and 0 <= days <= max_days:
-                total += _to_float(row.valor_saldo)
-        return round(total, 2)
+    total = 0.0
+    rows = self.db.query(ContaReceber).all()
+    for row in rows:
+        status = (row.status_titulo or "").upper()
+        if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
+            continue
 
+        days = _days_until(row.data_vencimento)
+        valor = _to_float(row.valor_saldo or row.valor_documento)
+
+        if days is not None and days < 0:
+            total += valor
+
+    return round(total, 2)
+
+def receber_horizonte(self, max_days: int) -> float:
+    if ContaReceber is None:
+        return 0.0
+
+    total = 0.0
+    rows = self.db.query(ContaReceber).all()
+    for row in rows:
+        status = (row.status_titulo or "").upper()
+        if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
+            continue
+
+        days = _days_until(row.data_vencimento)
+        valor = _to_float(row.valor_saldo or row.valor_documento)
+
+        if days is not None and 0 <= days <= max_days:
+            total += valor
+
+    return round(total, 2)
+    
     def pagar_horizonte(self, max_days: int) -> float:
         total = 0.0
         for row in self.db.query(ContaPagar).all():
