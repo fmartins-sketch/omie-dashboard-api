@@ -1,4 +1,4 @@
-import json
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -6,14 +6,16 @@ import httpx
 from sqlalchemy import Column, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.db.session import Base, SessionLocal, engine
 
+OMIE_APP_KEY = os.getenv("OMIE_APP_KEY", "")
+OMIE_APP_SECRET = os.getenv("OMIE_APP_SECRET", "")
 OMIE_BASE_URL = "https://app.omie.com.br/api/v1"
 
 
 class ContaReceber(Base):
     __tablename__ = "contas_receber"
+
     id = Column(Integer, primary_key=True, index=True)
     omie_id = Column(String(100), unique=True, index=True, nullable=False)
     codigo_cliente = Column(String(100), nullable=True)
@@ -32,6 +34,7 @@ class ContaReceber(Base):
 
 class ContaPagar(Base):
     __tablename__ = "contas_pagar"
+
     id = Column(Integer, primary_key=True, index=True)
     omie_id = Column(String(100), unique=True, index=True, nullable=False)
     codigo_fornecedor = Column(String(100), nullable=True)
@@ -50,6 +53,7 @@ class ContaPagar(Base):
 
 class Oportunidade(Base):
     __tablename__ = "oportunidades"
+
     id = Column(Integer, primary_key=True, index=True)
     omie_id = Column(String(100), unique=True, index=True, nullable=False)
     titulo = Column(String(255), nullable=True)
@@ -68,6 +72,7 @@ class Oportunidade(Base):
 
 class PedidoVenda(Base):
     __tablename__ = "pedidos_venda"
+
     id = Column(Integer, primary_key=True, index=True)
     omie_id = Column(String(100), unique=True, index=True, nullable=False)
     numero_pedido = Column(String(100), nullable=True)
@@ -86,40 +91,83 @@ def init_db() -> None:
 
 
 class OmieClient:
-    def __init__(self):
-        if not settings.omie_app_key or not settings.omie_app_secret:
+    def __init__(self, app_key: str, app_secret: str, timeout: int = 60):
+        if not app_key or not app_secret:
             raise ValueError("OMIE_APP_KEY e OMIE_APP_SECRET devem estar configurados.")
+        self.app_key = app_key
+        self.app_secret = app_secret
+        self.timeout = timeout
 
-    async def call(self, endpoint: str, call: str, param: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    async def call(
+        self,
+        endpoint: str,
+        call: str,
+        param: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        url = f"{OMIE_BASE_URL}/{endpoint}/"
         payload = {
             "call": call,
-            "app_key": settings.omie_app_key,
-            "app_secret": settings.omie_app_secret,
+            "app_key": self.app_key,
+            "app_secret": self.app_secret,
             "param": param or [{}],
         }
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(f"{OMIE_BASE_URL}/{endpoint}/", json=payload)
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
             if isinstance(data, dict) and data.get("faultstring"):
-                raise RuntimeError(data["faultstring"])
+                raise RuntimeError(f"Erro Omie: {data['faultstring']}")
             return data
 
-    async def listar_contas_receber(self, pagina: int = 1, registros_por_pagina: int = 50):
-        return await self.call("financas/contareceber", "ListarContasReceber", [{"pagina": pagina, "registros_por_pagina": registros_por_pagina}])
+    async def listar_contas_receber(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="financas/contareceber",
+            call="ListarContasReceber",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+                "apenas_importado_api": "N",
+            }],
+        )
 
-    async def listar_contas_pagar(self, pagina: int = 1, registros_por_pagina: int = 50):
-        return await self.call("financas/contapagar", "ListarContasPagar", [{"pagina": pagina, "registros_por_pagina": registros_por_pagina}])
+    async def listar_contas_pagar(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="financas/contapagar",
+            call="ListarContasPagar",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+                "apenas_importado_api": "N",
+            }],
+        )
 
-    async def listar_oportunidades(self, pagina: int = 1, registros_por_pagina: int = 50):
-        return await self.call("crm/oportunidades", "ListarOportunidades", [{"pagina": pagina, "registros_por_pagina": registros_por_pagina}])
+    async def listar_oportunidades(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="crm/oportunidades",
+            call="ListarOportunidades",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
 
-    async def listar_pedidos_venda(self, pagina: int = 1, registros_por_pagina: int = 50):
-        return await self.call("produtos/pedido", "ListarPedidos", [{"pagina": pagina, "registros_por_pagina": registros_por_pagina}])
+    async def listar_pedidos_venda(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="produtos/pedido",
+            call="ListarPedidos",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+                "apenas_importado_api": "N",
+            }],
+        )
 
 
 def _safe_str(value: Any) -> Optional[str]:
-    return None if value is None else str(value)
+    if value is None:
+        return None
+    return str(value)
 
 
 def _safe_float(value: Any) -> float:
@@ -127,6 +175,7 @@ def _safe_float(value: Any) -> float:
         return float(value or 0)
     except Exception:
         return 0.0
+
 
 def normalize_receber(item: Dict[str, Any]) -> Dict[str, Any]:
     omie_id = (
@@ -152,7 +201,9 @@ def normalize_receber(item: Dict[str, Any]) -> Dict[str, Any]:
         "omie_id": _safe_str(omie_id),
         "codigo_cliente": _safe_str(item.get("codigo_cliente_fornecedor")),
         "nome_cliente": _safe_str(nome_cliente),
-        "numero_documento": _safe_str(item.get("numero_documento_fiscal") or item.get("numero_documento")),
+        "numero_documento": _safe_str(
+            item.get("numero_documento_fiscal") or item.get("numero_documento")
+        ),
         "status_titulo": _safe_str(item.get("status_titulo")),
         "categoria": _safe_str(item.get("codigo_categoria")),
         "data_vencimento": _safe_str(data_vencimento),
@@ -162,25 +213,45 @@ def normalize_receber(item: Dict[str, Any]) -> Dict[str, Any]:
         "payload_json": str(item),
     }
 
+
 def normalize_pagar(item: Dict[str, Any]) -> Dict[str, Any]:
+    omie_id = (
+        item.get("codigo_lancamento_omie")
+        or item.get("nCodTitulo")
+        or item.get("codigo_lancamento_integracao")
+    )
+
+    nome_fornecedor = (
+        item.get("nome_fantasia")
+        or item.get("razao_social")
+        or item.get("fornecedor")
+        or item.get("nome_fornecedor")
+    )
+
+    data_vencimento = item.get("data_vencimento") or item.get("data_previsao")
+    data_emissao = item.get("data_emissao") or item.get("data_registro")
+
     return {
-        "omie_id": _safe_str(item.get("codigo_lancamento_omie") or item.get("nCodTitulo") or item.get("codigo_lancamento_integracao")),
+        "omie_id": _safe_str(omie_id),
         "codigo_fornecedor": _safe_str(item.get("codigo_cliente_fornecedor")),
-        "nome_fornecedor": _safe_str(item.get("nome_fantasia") or item.get("razao_social")),
-        "numero_documento": _safe_str(item.get("numero_documento")),
+        "nome_fornecedor": _safe_str(nome_fornecedor),
+        "numero_documento": _safe_str(
+            item.get("numero_documento_fiscal") or item.get("numero_documento")
+        ),
         "status_titulo": _safe_str(item.get("status_titulo")),
         "categoria": _safe_str(item.get("codigo_categoria")),
-        "data_vencimento": _safe_str(item.get("data_vencimento")),
-        "data_emissao": _safe_str(item.get("data_emissao")),
+        "data_vencimento": _safe_str(data_vencimento),
+        "data_emissao": _safe_str(data_emissao),
         "valor_documento": _safe_float(item.get("valor_documento")),
         "valor_saldo": _safe_float(item.get("valor_saldo")),
-        "payload_json": json.dumps(item, ensure_ascii=False),
+        "payload_json": str(item),
     }
 
 
 def normalize_oportunidade(item: Dict[str, Any]) -> Dict[str, Any]:
     valor_total = _safe_float(item.get("valor_total") or item.get("valor"))
-    probabilidade = _safe_float(item.get("probabilidade"))
+    probabilidade = _safe_float(item.get("probabilidade") or 0)
+
     return {
         "omie_id": _safe_str(item.get("codigo_oportunidade") or item.get("codigo") or item.get("id")),
         "titulo": _safe_str(item.get("titulo") or item.get("nome_oportunidade")),
@@ -192,7 +263,7 @@ def normalize_oportunidade(item: Dict[str, Any]) -> Dict[str, Any]:
         "probabilidade": probabilidade,
         "valor_ponderado": valor_total * (probabilidade / 100),
         "status": _safe_str(item.get("status")),
-        "payload_json": json.dumps(item, ensure_ascii=False),
+        "payload_json": str(item),
     }
 
 
@@ -204,55 +275,121 @@ def normalize_pedido(item: Dict[str, Any]) -> Dict[str, Any]:
         "etapa": _safe_str(item.get("etapa")),
         "status": _safe_str(item.get("status_pedido") or item.get("status")),
         "data_emissao": _safe_str(item.get("data_previsao") or item.get("data_emissao")),
-        "valor_total": _safe_float(item.get("valor_total_pedido") or item.get("total_pedido") or item.get("valor_total")),
-        "payload_json": json.dumps(item, ensure_ascii=False),
+        "valor_total": _safe_float(
+            item.get("valor_total_pedido")
+            or item.get("total_pedido")
+            or item.get("valor_total")
+        ),
+        "payload_json": str(item),
     }
 
 
-def _upsert(db: Session, model, key: str, data: Dict[str, Any]) -> None:
-    existing = db.query(model).filter(getattr(model, key) == data[key]).first()
+def upsert_conta_receber(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(ContaReceber).filter(ContaReceber.omie_id == normalized["omie_id"]).first()
     if existing:
-        for field, value in data.items():
-            setattr(existing, field, value)
+        for key, value in normalized.items():
+            setattr(existing, key, value)
     else:
-        db.add(model(**data))
+        db.add(ContaReceber(**normalized))
+
+
+def upsert_conta_pagar(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(ContaPagar).filter(ContaPagar.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(ContaPagar(**normalized))
+
+
+def upsert_oportunidade(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(Oportunidade).filter(Oportunidade.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(Oportunidade(**normalized))
+
+
+def upsert_pedido(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(PedidoVenda).filter(PedidoVenda.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(PedidoVenda(**normalized))
+
+
+async def sync_contas_receber(db: Session, client: OmieClient, paginas: int = 3) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_contas_receber(pagina=pagina)
+        items = data.get("conta_receber_cadastro") or data.get("lista_contas_receber") or []
+        for item in items:
+            normalized = normalize_receber(item)
+            if normalized["omie_id"]:
+                upsert_conta_receber(db, normalized)
+                total += 1
+    db.commit()
+    return total
+
+
+async def sync_contas_pagar(db: Session, client: OmieClient, paginas: int = 3) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_contas_pagar(pagina=pagina)
+        items = data.get("conta_pagar_cadastro") or data.get("lista_contas_pagar") or []
+        for item in items:
+            normalized = normalize_pagar(item)
+            if normalized["omie_id"]:
+                upsert_conta_pagar(db, normalized)
+                total += 1
+    db.commit()
+    return total
+
+
+async def sync_oportunidades(db: Session, client: OmieClient, paginas: int = 3) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_oportunidades(pagina=pagina)
+        items = data.get("cadastro") or data.get("oportunidades") or data.get("lista_oportunidades") or []
+        for item in items:
+            normalized = normalize_oportunidade(item)
+            if normalized["omie_id"]:
+                upsert_oportunidade(db, normalized)
+                total += 1
+    db.commit()
+    return total
+
+
+async def sync_pedidos(db: Session, client: OmieClient, paginas: int = 3) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_pedidos_venda(pagina=pagina)
+        items = data.get("pedido_venda_produto") or data.get("pedidos") or data.get("lista_pedidos") or []
+        for item in items:
+            normalized = normalize_pedido(item)
+            if normalized["omie_id"]:
+                upsert_pedido(db, normalized)
+                total += 1
+    db.commit()
+    return total
 
 
 async def sync_all_modules() -> Dict[str, int]:
     init_db()
-    client = OmieClient()
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
     db = SessionLocal()
-    result = {"receber": 0, "pagar": 0, "oportunidades": 0, "pedidos": 0}
     try:
-        data = await client.listar_contas_receber()
-        for item in data.get("conta_receber_cadastro") or data.get("lista_contas_receber") or []:
-            normalized = normalize_receber(item)
-            if normalized["omie_id"]:
-                _upsert(db, ContaReceber, "omie_id", normalized)
-                result["receber"] += 1
-
-        data = await client.listar_contas_pagar()
-        for item in data.get("conta_pagar_cadastro") or data.get("lista_contas_pagar") or []:
-            normalized = normalize_pagar(item)
-            if normalized["omie_id"]:
-                _upsert(db, ContaPagar, "omie_id", normalized)
-                result["pagar"] += 1
-
-        data = await client.listar_oportunidades()
-        for item in data.get("cadastro") or data.get("oportunidades") or data.get("lista_oportunidades") or []:
-            normalized = normalize_oportunidade(item)
-            if normalized["omie_id"]:
-                _upsert(db, Oportunidade, "omie_id", normalized)
-                result["oportunidades"] += 1
-
-        data = await client.listar_pedidos_venda()
-        for item in data.get("pedido_venda_produto") or data.get("pedidos") or data.get("lista_pedidos") or []:
-            normalized = normalize_pedido(item)
-            if normalized["omie_id"]:
-                _upsert(db, PedidoVenda, "omie_id", normalized)
-                result["pedidos"] += 1
-
-        db.commit()
-        return result
+        receber = await sync_contas_receber(db, client)
+        pagar = await sync_contas_pagar(db, client)
+        oportunidades = await sync_oportunidades(db, client)
+        pedidos = await sync_pedidos(db, client)
+        return {
+            "receber": receber,
+            "pagar": pagar,
+            "oportunidades": oportunidades,
+            "pedidos": pedidos,
+        }
     finally:
         db.close()
