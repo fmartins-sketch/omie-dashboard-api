@@ -128,22 +128,39 @@ def _safe_float(value: Any) -> float:
     except Exception:
         return 0.0
 
-
 def normalize_receber(item: Dict[str, Any]) -> Dict[str, Any]:
+    omie_id = (
+        item.get("codigo_lancamento_omie")
+        or item.get("nCodTitulo")
+        or item.get("codigo_lancamento_integracao")
+    )
+
+    nome_cliente = (
+        item.get("nome_fantasia")
+        or item.get("razao_social")
+        or item.get("cliente")
+        or item.get("nome_cliente")
+    )
+
+    data_vencimento = item.get("data_vencimento") or item.get("data_previsao")
+    data_emissao = item.get("data_emissao") or item.get("data_registro")
+
+    valor_documento = _safe_float(item.get("valor_documento"))
+    valor_saldo = _safe_float(item.get("valor_saldo"))
+
     return {
-        "omie_id": _safe_str(item.get("codigo_lancamento_omie") or item.get("nCodTitulo") or item.get("codigo_lancamento_integracao")),
+        "omie_id": _safe_str(omie_id),
         "codigo_cliente": _safe_str(item.get("codigo_cliente_fornecedor")),
-        "nome_cliente": _safe_str(item.get("nome_fantasia") or item.get("razao_social")),
-        "numero_documento": _safe_str(item.get("numero_documento")),
+        "nome_cliente": _safe_str(nome_cliente),
+        "numero_documento": _safe_str(item.get("numero_documento_fiscal") or item.get("numero_documento")),
         "status_titulo": _safe_str(item.get("status_titulo")),
         "categoria": _safe_str(item.get("codigo_categoria")),
-        "data_vencimento": _safe_str(item.get("data_vencimento")),
-        "data_emissao": _safe_str(item.get("data_emissao")),
-        "valor_documento": _safe_float(item.get("valor_documento")),
-        "valor_saldo": _safe_float(item.get("valor_saldo")),
-        "payload_json": json.dumps(item, ensure_ascii=False),
+        "data_vencimento": _safe_str(data_vencimento),
+        "data_emissao": _safe_str(data_emissao),
+        "valor_documento": valor_documento,
+        "valor_saldo": valor_saldo,
+        "payload_json": str(item),
     }
-
 
 def normalize_pagar(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
