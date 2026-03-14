@@ -87,7 +87,7 @@ class PedidoVenda(Base):
 
 
 class ContaCorrente(Base):
-    __tablename__ = "contas_correntes"
+    __tablename__ = "orrentes"
 
     id = Column(Integer, primary_key=True, index=True)
     omie_id = Column(String(100), unique=True, index=True, nullable=False)
@@ -180,7 +180,7 @@ class OmieClient:
             }],
         )
 
-    async def listar_contas_correntes(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+    async def listar_orrentes(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
         return await self.call(
             endpoint="geral/contacorrente",
             call="ListarContasCorrentes",
@@ -450,7 +450,7 @@ async def sync_pedidos(db: Session, client: OmieClient, paginas: int = 3) -> int
     return total
 
 
-async def sync_contas_correntes(db: Session, client: OmieClient, paginas: int = 2) -> int:
+async def sync_orrentes(db: Session, client: OmieClient, paginas: int = 2) -> int:
     total = 0
     for pagina in range(1, paginas + 1):
         data = await client.listar_contas_correntes(pagina=pagina)
@@ -489,3 +489,23 @@ async def sync_all_modules() -> Dict[str, int]:
         }
     finally:
         db.close()
+
+async def sync_contas_correntes(db: Session, client: OmieClient, paginas: int = 2) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_contas_correntes(pagina=pagina)
+        items = (
+            data.get("ListarContasCorrentes")
+            or data.get("lista")
+            or data.get("cadastros")
+            or data.get("conta_corrente_cadastro")
+            or data.get("lista_contas_correntes")
+            or []
+        )
+        for item in items:
+            normalized = normalize_conta_corrente(item)
+            if normalized["omie_id"]:
+                upsert_conta_corrente(db, normalized)
+                total += 1
+    db.commit()
+    return total
