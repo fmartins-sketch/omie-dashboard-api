@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy.orm import Session
-from typing import Dict, Any
 
 from app.db.session import get_db
 from app.integrations.omie.integration_module import (
-    init_db,
+     init_db,
     sync_all_modules,
     ContaReceber,
     ContaPagar,
@@ -14,7 +17,8 @@ from app.integrations.omie.integration_module import (
     OMIE_APP_KEY,
     OMIE_APP_SECRET,
 )
-from app.services.kpis import KPIService
+
+
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
