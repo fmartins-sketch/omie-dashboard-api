@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.integrations.omie.integration_module import (
+    ContaCorrente,
     ContaPagar,
     ContaReceber,
     Oportunidade,
@@ -74,8 +75,7 @@ class KPIService:
 
     def total_receber_em_aberto(self) -> float:
         total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
+        for row in self.db.query(ContaReceber).all():
             status = (row.status_titulo or "").upper()
             if status not in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 total += _to_float(row.valor_saldo or row.valor_documento)
@@ -83,8 +83,7 @@ class KPIService:
 
     def total_pagar_em_aberto(self) -> float:
         total = 0.0
-        rows = self.db.query(ContaPagar).all()
-        for row in rows:
+        for row in self.db.query(ContaPagar).all():
             status = (row.status_titulo or "").upper()
             if status not in {"PAGO", "CANCELADO", "BAIXADO"}:
                 total += _to_float(row.valor_saldo or row.valor_documento)
@@ -92,8 +91,7 @@ class KPIService:
 
     def faturamento_total_pedidos(self) -> float:
         total = 0.0
-        rows = self.db.query(PedidoVenda).all()
-        for row in rows:
+        for row in self.db.query(PedidoVenda).all():
             status = (row.status or "").upper()
             if "CANCELADO" in status:
                 continue
@@ -105,6 +103,67 @@ class KPIService:
 
     def pipeline_ponderado(self) -> float:
         return round(sum(_to_float(row.valor_ponderado) for row in self.db.query(Oportunidade).all()), 2)
+
+    def total_saldo_contas_correntes(self) -> float:
+        return round(sum(_to_float(row.saldo) for row in self.db.query(ContaCorrente).all()), 2)
+
+    def saldos_por_conta(self) -> List[Dict[str, Any]]:
+        rows = self.db.query(ContaCorrente).all()
+        return [
+            {
+                "banco": row.banco or "Sem banco",
+                "conta": row.conta or "Sem conta",
+                "agencia": row.agencia or "",
+                "descricao": row.descricao or "",
+                "saldo": round(_to_float(row.saldo), 2),
+                "status": row.status or "",
+            }
+            for row in rows
+        ]
+
+    def caixa_liquido(self) -> float:
+        return round(self.total_saldo_contas_correntes() - self.total_pagar_em_aberto(), 2)
+
+    def dividas_vencidas(self) -> float:
+        total = 0.0
+        for row in self.db.query(ContaPagar).all():
+            status = (row.status_titulo or "").upper()
+            if status in {"PAGO", "CANCELADO", "BAIXADO"}:
+                continue
+            days = _days_until(row.data_vencimento)
+            valor = _to_float(row.valor_saldo or row.valor_documento)
+            if days is not None and days < 0:
+                total += valor
+        return round(total, 2)
+
+    def dividas_horizonte(self, max_days: int) -> float:
+        total = 0.0
+        for row in self.db.query(ContaPagar).all():
+            status = (row.status_titulo or "").upper()
+            if status in {"PAGO", "CANCELADO", "BAIXADO"}:
+                continue
+            days = _days_until(row.data_vencimento)
+            valor = _to_float(row.valor_saldo or row.valor_documento)
+            if days is not None and 0 <= days <= max_days:
+                total += valor
+        return round(total, 2)
+
+    def top_obrigacoes(self, limit: int = 10) -> List[Dict[str, Any]]:
+        rows = []
+        for row in self.db.query(ContaPagar).all():
+            status = (row.status_titulo or "").upper()
+            if status in {"PAGO", "CANCELADO", "BAIXADO"}:
+                continue
+            rows.append({
+                "fornecedor": row.nome_fornecedor or row.codigo_fornecedor or "Sem fornecedor",
+                "documento": row.numero_documento or "",
+                "vencimento": row.data_vencimento or "",
+                "categoria": row.categoria or "",
+                "valor": round(_to_float(row.valor_saldo or row.valor_documento), 2),
+                "status": row.status_titulo or "",
+            })
+        rows.sort(key=lambda x: x["valor"], reverse=True)
+        return rows[:limit]
 
     def _aging_receber_rows(self) -> List[ContaReceber]:
         rows = []
@@ -166,50 +225,38 @@ class KPIService:
 
     def inadimplencia_total(self) -> float:
         total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
+        for row in self.db.query(ContaReceber).all():
             status = (row.status_titulo or "").upper()
             if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             valor = _to_float(row.valor_saldo or row.valor_documento)
-
             if days is not None and days < 0:
                 total += valor
-
         return round(total, 2)
 
     def receber_horizonte(self, max_days: int) -> float:
         total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
+        for row in self.db.query(ContaReceber).all():
             status = (row.status_titulo or "").upper()
             if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             valor = _to_float(row.valor_saldo or row.valor_documento)
-
             if days is not None and 0 <= days <= max_days:
                 total += valor
-
         return round(total, 2)
 
     def pagar_horizonte(self, max_days: int) -> float:
         total = 0.0
-        rows = self.db.query(ContaPagar).all()
-        for row in rows:
+        for row in self.db.query(ContaPagar).all():
             status = (row.status_titulo or "").upper()
             if status in {"PAGO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             valor = _to_float(row.valor_saldo or row.valor_documento)
-
             if days is not None and 0 <= days <= max_days:
                 total += valor
-
         return round(total, 2)
 
     def top_inadimplentes(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -218,7 +265,6 @@ class KPIService:
             status = (row.status_titulo or "").upper()
             if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             if days is not None and days < 0:
                 nome = row.nome_cliente or row.codigo_cliente or "Sem nome"
@@ -316,6 +362,8 @@ class KPIService:
             "ebitda": self.ebitda(),
             "margem_ebitda": self.margem_ebitda(),
             "caixa_disponivel": round(self.total_receber_em_aberto() - self.total_pagar_em_aberto(), 2),
+            "saldo_contas_correntes": self.total_saldo_contas_correntes(),
+            "caixa_liquido": self.caixa_liquido(),
             "receber_30": self.receber_horizonte(30),
             "pagar_30": self.pagar_horizonte(30),
             "pipeline_ponderado": self.pipeline_ponderado(),
@@ -339,6 +387,15 @@ class KPIService:
                 {"horizonte": "60 dias", "receber": self.receber_horizonte(60), "pagar": self.pagar_horizonte(60)},
             ],
             "top_inadimplentes": self.top_inadimplentes(),
+            "dividas_total": self.total_pagar_em_aberto(),
+            "dividas_vencidas": self.dividas_vencidas(),
+            "dividas_7": self.dividas_horizonte(7),
+            "dividas_15": self.dividas_horizonte(15),
+            "dividas_30": self.dividas_horizonte(30),
+            "top_obrigacoes": self.top_obrigacoes(),
+            "saldos_contas": self.saldos_por_conta(),
+            "saldo_total_contas": self.total_saldo_contas_correntes(),
+            "caixa_liquido": self.caixa_liquido(),
         }
 
     def comercial_dashboard(self) -> Dict[str, Any]:
