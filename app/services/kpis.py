@@ -11,31 +11,6 @@ from app.integrations.omie.integration_module import (
     PedidoVenda,
 )
 
-FIXED_COST_CATEGORIES = {
-    "ALUGUEL",
-    "SALARIOS_ADMIN",
-    "HONORARIOS",
-    "SOFTWARES",
-    "CONTABILIDADE",
-    "INTERNET",
-    "SERVICOS_RECORRENTES",
-}
-
-VARIABLE_COST_CATEGORIES = {
-    "COMISSOES",
-    "FRETES",
-    "CUSTO_MERCADORIA",
-    "IMPOSTOS_VENDA",
-    "SERVICOS_TERCEIROS_VARIAVEIS",
-}
-
-INVESTMENT_CATEGORIES = {
-    "INVESTIMENTO",
-    "CAPEX",
-    "EQUIPAMENTOS",
-    "IMPLANTACAO",
-}
-
 
 def _to_float(value: Any) -> float:
     if value is None:
@@ -99,49 +74,16 @@ class KPIService:
     def pipeline_ponderado(self) -> float:
         return round(sum(_to_float(row.valor_ponderado) for row in self.db.query(Oportunidade).all()), 2)
 
-    def _aging_receber_rows(self) -> List[ContaReceber]:
-        rows = []
+    def aging_receber(self) -> List[Dict[str, Any]]:
+        buckets = {"A vencer": 0.0, "1-30": 0.0, "31-60": 0.0, "61-90": 0.0, "+90": 0.0}
         for row in self.db.query(ContaReceber).all():
             status = (row.status_titulo or "").upper()
             if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 continue
-            rows.append(row)
-        return rows
-
-    def _aging_pagar_rows(self) -> List[ContaPagar]:
-        rows = []
-        for row in self.db.query(ContaPagar).all():
-            status = (row.status_titulo or "").upper()
-            if status in {"PAGO", "CANCELADO", "BAIXADO"}:
-                continue
-            rows.append(row)
-        return rows
-
-    def aging_receber(self) -> List[Dict[str, Any]]:
-        return self._aging(self._aging_receber_rows(), use_documento_if_zero=True)
-
-    def aging_pagar(self) -> List[Dict[str, Any]]:
-        return self._aging(self._aging_pagar_rows(), use_documento_if_zero=True)
-
-    def _aging(self, rows: List[Any], use_documento_if_zero: bool = False) -> List[Dict[str, Any]]:
-        buckets = {
-            "A vencer": 0.0,
-            "1-30": 0.0,
-            "31-60": 0.0,
-            "61-90": 0.0,
-            "+90": 0.0,
-        }
-
-        for row in rows:
             days = _days_until(row.data_vencimento)
-            valor = _to_float(row.valor_saldo)
-
-            if use_documento_if_zero and valor == 0:
-                valor = _to_float(row.valor_documento)
-
+            valor = _to_float(row.valor_saldo or row.valor_documento)
             if days is None:
                 continue
-
             if days >= 0:
                 buckets["A vencer"] += valor
             else:
@@ -154,55 +96,66 @@ class KPIService:
                     buckets["61-90"] += valor
                 else:
                     buckets["+90"] += valor
+        return [{"label": k, "value": round(v, 2)} for k, v in buckets.items()]
 
+    def aging_pagar(self) -> List[Dict[str, Any]]:
+        buckets = {"A vencer": 0.0, "1-30": 0.0, "31-60": 0.0, "61-90": 0.0, "+90": 0.0}
+        for row in self.db.query(ContaPagar).all():
+            status = (row.status_titulo or "").upper()
+            if status in {"PAGO", "CANCELADO", "BAIXADO"}:
+                continue
+            days = _days_until(row.data_vencimento)
+            valor = _to_float(row.valor_saldo or row.valor_documento)
+            if days is None:
+                continue
+            if days >= 0:
+                buckets["A vencer"] += valor
+            else:
+                overdue = abs(days)
+                if overdue <= 30:
+                    buckets["1-30"] += valor
+                elif overdue <= 60:
+                    buckets["31-60"] += valor
+                elif overdue <= 90:
+                    buckets["61-90"] += valor
+                else:
+                    buckets["+90"] += valor
         return [{"label": k, "value": round(v, 2)} for k, v in buckets.items()]
 
     def inadimplencia_total(self) -> float:
         total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
+        for row in self.db.query(ContaReceber).all():
             status = (row.status_titulo or "").upper()
             if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             valor = _to_float(row.valor_saldo or row.valor_documento)
-
             if days is not None and days < 0:
                 total += valor
-
         return round(total, 2)
 
     def receber_horizonte(self, max_days: int) -> float:
         total = 0.0
-        rows = self.db.query(ContaReceber).all()
-        for row in rows:
+        for row in self.db.query(ContaReceber).all():
             status = (row.status_titulo or "").upper()
             if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             valor = _to_float(row.valor_saldo or row.valor_documento)
-
             if days is not None and 0 <= days <= max_days:
                 total += valor
-
         return round(total, 2)
 
     def pagar_horizonte(self, max_days: int) -> float:
         total = 0.0
-        rows = self.db.query(ContaPagar).all()
-        for row in rows:
+        for row in self.db.query(ContaPagar).all():
             status = (row.status_titulo or "").upper()
             if status in {"PAGO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             valor = _to_float(row.valor_saldo or row.valor_documento)
-
             if days is not None and 0 <= days <= max_days:
                 total += valor
-
         return round(total, 2)
 
     def top_inadimplentes(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -211,40 +164,23 @@ class KPIService:
             status = (row.status_titulo or "").upper()
             if status in {"RECEBIDO", "CANCELADO", "BAIXADO"}:
                 continue
-
             days = _days_until(row.data_vencimento)
             if days is not None and days < 0:
                 nome = row.nome_cliente or row.codigo_cliente or "Sem nome"
                 grouped[nome] = grouped.get(nome, 0.0) + _to_float(row.valor_saldo or row.valor_documento)
-
-        return [
-            {"cliente": k, "valor": round(v, 2)}
-            for k, v in sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
-        ]
+        return [{"cliente": k, "valor": round(v, 2)} for k, v in sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]]
 
     def receita_liquida(self) -> float:
         return self.faturamento_total_pedidos()
 
     def custos_variaveis(self) -> float:
-        total = 0.0
-        for row in self.db.query(ContaPagar).all():
-            if (row.categoria or "").upper() in VARIABLE_COST_CATEGORIES:
-                total += _to_float(row.valor_documento)
-        return round(total, 2)
+        return 0.0
 
     def custos_fixos(self) -> float:
-        total = 0.0
-        for row in self.db.query(ContaPagar).all():
-            if (row.categoria or "").upper() in FIXED_COST_CATEGORIES:
-                total += _to_float(row.valor_documento)
-        return round(total, 2)
+        return 0.0
 
     def investimentos(self) -> float:
-        total = 0.0
-        for row in self.db.query(ContaPagar).all():
-            if (row.categoria or "").upper() in INVESTMENT_CATEGORIES:
-                total += _to_float(row.valor_documento)
-        return round(total, 2)
+        return 0.0
 
     def margem_contribuicao(self) -> float:
         return round(self.receita_liquida() - self.custos_variaveis(), 2)
@@ -284,21 +220,10 @@ class KPIService:
         return [{"fase": k, "quantidade": v} for k, v in grouped.items()]
 
     def top_vendedores(self, limit: int = 10) -> List[Dict[str, Any]]:
-        grouped: Dict[str, Dict[str, Any]] = {}
-        for row in self.db.query(Oportunidade).all():
-            vendedor = row.vendedor or "Sem vendedor"
-            grouped.setdefault(vendedor, {"nome": vendedor, "receita": 0.0, "pipeline": 0.0, "qtd": 0})
-            grouped[vendedor]["receita"] += _to_float(row.valor_total)
-            grouped[vendedor]["pipeline"] += _to_float(row.valor_ponderado)
-            grouped[vendedor]["qtd"] += 1
-        return sorted(grouped.values(), key=lambda x: x["pipeline"], reverse=True)[:limit]
+        return []
 
     def top_clientes(self, limit: int = 10) -> List[Dict[str, Any]]:
-        grouped: Dict[str, float] = {}
-        for row in self.db.query(PedidoVenda).all():
-            cliente = row.cliente or "Sem cliente"
-            grouped[cliente] = grouped.get(cliente, 0.0) + _to_float(row.valor_total)
-        return [{"nome": k, "receita": round(v, 2)} for k, v in sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]]
+        return []
 
     def ceo_dashboard(self, empresa: str = "consolidado", periodo: str = "mes_atual") -> Dict[str, Any]:
         return {
