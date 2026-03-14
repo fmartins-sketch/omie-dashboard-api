@@ -194,9 +194,6 @@ def normalize_receber(item: Dict[str, Any]) -> Dict[str, Any]:
     data_vencimento = item.get("data_vencimento") or item.get("data_previsao")
     data_emissao = item.get("data_emissao") or item.get("data_registro")
 
-    valor_documento = _safe_float(item.get("valor_documento"))
-    valor_saldo = _safe_float(item.get("valor_saldo"))
-
     return {
         "omie_id": _safe_str(omie_id),
         "codigo_cliente": _safe_str(item.get("codigo_cliente_fornecedor")),
@@ -208,8 +205,8 @@ def normalize_receber(item: Dict[str, Any]) -> Dict[str, Any]:
         "categoria": _safe_str(item.get("codigo_categoria")),
         "data_vencimento": _safe_str(data_vencimento),
         "data_emissao": _safe_str(data_emissao),
-        "valor_documento": valor_documento,
-        "valor_saldo": valor_saldo,
+        "valor_documento": _safe_float(item.get("valor_documento")),
+        "valor_saldo": _safe_float(item.get("valor_saldo")),
         "payload_json": str(item),
     }
 
@@ -249,37 +246,60 @@ def normalize_pagar(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_oportunidade(item: Dict[str, Any]) -> Dict[str, Any]:
-    valor_total = _safe_float(item.get("valor_total") or item.get("valor"))
-    probabilidade = _safe_float(item.get("probabilidade") or 0)
+    identificacao = item.get("identificacao", {}) or {}
+    fases = item.get("fasesStatus", {}) or {}
+    previsao = item.get("previsaoTemp", {}) or {}
+    ticket = item.get("ticket", {}) or {}
+    outras = item.get("outrasInf", {}) or {}
+
+    valor_total = _safe_float(ticket.get("nTicket"))
+    probabilidade = _safe_float(previsao.get("nTemperatura"))
+
+    previsao_fechamento = None
+    ano = previsao.get("nAnoPrev")
+    mes = previsao.get("nMesPrev")
+    if ano and mes:
+        try:
+            previsao_fechamento = f"{int(ano):04d}-{int(mes):02d}-01"
+        except Exception:
+            previsao_fechamento = None
 
     return {
-        "omie_id": _safe_str(item.get("codigo_oportunidade") or item.get("codigo") or item.get("id")),
-        "titulo": _safe_str(item.get("titulo") or item.get("nome_oportunidade")),
-        "cliente": _safe_str(item.get("cliente") or item.get("nome_cliente")),
-        "etapa": _safe_str(item.get("etapa") or item.get("descricao_etapa")),
-        "vendedor": _safe_str(item.get("vendedor") or item.get("nome_vendedor")),
-        "previsao_fechamento": _safe_str(item.get("previsao_fechamento")),
+        "omie_id": _safe_str(identificacao.get("nCodOp")),
+        "titulo": _safe_str(identificacao.get("cDesOp")),
+        "cliente": _safe_str(identificacao.get("nCodConta")),
+        "etapa": _safe_str(fases.get("nCodFase")),
+        "vendedor": _safe_str(identificacao.get("nCodVendedor")),
+        "previsao_fechamento": _safe_str(previsao_fechamento or outras.get("dAlteracao")),
         "valor_total": valor_total,
         "probabilidade": probabilidade,
         "valor_ponderado": valor_total * (probabilidade / 100),
-        "status": _safe_str(item.get("status")),
+        "status": _safe_str(fases.get("nCodStatus")),
         "payload_json": str(item),
     }
 
 
 def normalize_pedido(item: Dict[str, Any]) -> Dict[str, Any]:
+    cab = item.get("cabecalho", {}) or {}
+    total = item.get("total_pedido", {}) or {}
+    info = item.get("infoCadastro", {}) or {}
+
+    status_parts = []
+    if info.get("cancelado") == "S":
+        status_parts.append("CANCELADO")
+    if info.get("faturado") == "S":
+        status_parts.append("FATURADO")
+    if not status_parts:
+        status_parts.append("ABERTO")
+
     return {
-        "omie_id": _safe_str(item.get("codigo_pedido") or item.get("codigo_pedido_omie") or item.get("id")),
-        "numero_pedido": _safe_str(item.get("numero_pedido") or item.get("numero")),
-        "cliente": _safe_str(item.get("nome_fantasia") or item.get("cliente")),
-        "etapa": _safe_str(item.get("etapa")),
-        "status": _safe_str(item.get("status_pedido") or item.get("status")),
-        "data_emissao": _safe_str(item.get("data_previsao") or item.get("data_emissao")),
-        "valor_total": _safe_float(
-            item.get("valor_total_pedido")
-            or item.get("total_pedido")
-            or item.get("valor_total")
-        ),
+        "omie_id": _safe_str(cab.get("codigo_pedido")),
+        "numero_pedido": _safe_str(cab.get("numero_pedido")),
+        "cliente": _safe_str(cab.get("codigo_cliente")),
+        "etapa": _safe_str(cab.get("etapa")),
+        "status": " / ".join(status_parts),
+        "data_emissao": _safe_str(cab.get("data_previsao")),
+        "valor_total": _safe_float(total.get("valor_total_pedido")),
         "payload_json": str(item),
     }
 
@@ -352,7 +372,7 @@ async def sync_oportunidades(db: Session, client: OmieClient, paginas: int = 3) 
     total = 0
     for pagina in range(1, paginas + 1):
         data = await client.listar_oportunidades(pagina=pagina)
-        items = data.get("cadastro") or data.get("oportunidades") or data.get("lista_oportunidades") or []
+        items = data.get("cadastros") or data.get("oportunidades") or data.get("lista_oportunidades") or []
         for item in items:
             normalized = normalize_oportunidade(item)
             if normalized["omie_id"]:
