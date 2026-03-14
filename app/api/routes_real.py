@@ -3,9 +3,13 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from fastapi import Depends
+
 from app.db.session import get_db
 from app.integrations.omie.integration_module import init_db, sync_all_modules
 from app.services.kpis import KPIService
+
+from app.integrations.omie.integration_module import ContaReceber, ContaPagar
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -49,3 +53,31 @@ async def run_full_sync() -> Dict[str, Any]:
         return {"status": "ok", "message": "Sincronização concluída com sucesso.", "synced": await sync_all_modules()}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Erro ao sincronizar Omie: {str(exc)}") from exc
+@router.get("/debug/receber/first")
+def debug_receber_first(db: Session = Depends(get_db)):
+    row = db.query(ContaReceber).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "valor_documento": float(row.valor_documento or 0),
+        "valor_saldo": float(row.valor_saldo or 0),
+        "data_vencimento": row.data_vencimento,
+        "nome_cliente": row.nome_cliente,
+        "payload_json": row.payload_json,
+    }
+
+
+@router.get("/debug/pagar/first")
+def debug_pagar_first(db: Session = Depends(get_db)):
+    row = db.query(ContaPagar).first()
+    if not row:
+        return {"message": "nenhum registro"}
+    return {
+        "omie_id": row.omie_id,
+        "valor_documento": float(row.valor_documento or 0),
+        "valor_saldo": float(row.valor_saldo or 0),
+        "data_vencimento": row.data_vencimento,
+        "nome_fornecedor": row.nome_fornecedor,
+        "payload_json": row.payload_json,
+    }
