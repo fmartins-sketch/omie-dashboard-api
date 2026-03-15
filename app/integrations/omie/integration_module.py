@@ -412,8 +412,8 @@ def normalize_conta_corrente(item: Dict[str, Any]) -> Dict[str, Any]:
 
 def normalize_fase(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "omie_id": _safe_str(item.get("cCodigo")),
-        "nome": _safe_str(item.get("cDescricao")),
+        "omie_id": _safe_str(item.get("nCodigo")),
+        "nome": _safe_str(item.get("cDescrUsuario") or item.get("cDescrPadrao")),
         "payload_json": str(item),
     }
 
@@ -439,22 +439,16 @@ def normalize_vendedor_crm(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_conta_crm(item: Dict[str, Any]) -> Dict[str, Any]:
+    identificacao = item.get("identificacao", {}) or {}
+    endereco = item.get("endereco", {}) or {}
+
     return {
-        "omie_id": _safe_str(
-            item.get("nCodConta")
-            or item.get("codigo")
-            or item.get("id")
-        ),
-        "nome": _safe_str(
-            item.get("cNome")
-            or item.get("nome_fantasia")
-            or item.get("razao_social")
-            or item.get("nome")
-        ),
-        "documento": _safe_str(item.get("cnpj_cpf") or item.get("documento")),
-        "cidade": _safe_str(item.get("cidade")),
-        "estado": _safe_str(item.get("estado")),
-        "status": _safe_str(item.get("status") or "ATIVO"),
+        "omie_id": _safe_str(identificacao.get("nCod")),
+        "nome": _safe_str(identificacao.get("cNome") or identificacao.get("cNomeFantasia")),
+        "documento": _safe_str(identificacao.get("cDoc")),
+        "cidade": _safe_str(endereco.get("cCidade")),
+        "estado": _safe_str(endereco.get("cUF")),
+        "status": "ATIVO",
         "payload_json": str(item),
     }
 
