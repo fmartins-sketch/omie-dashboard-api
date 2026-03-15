@@ -184,10 +184,7 @@ class OmieClient:
         return await self.call(
             endpoint="geral/contacorrente",
             call="ListarContasCorrentes",
-            param=[{
-                "nPagina": pagina,
-                "nRegPorPagina": registros_por_pagina,
-            }],
+            param=[{}],
         )
 
 
@@ -333,12 +330,7 @@ def normalize_pedido(item: Dict[str, Any]) -> Dict[str, Any]:
 
 def normalize_conta_corrente(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "omie_id": _safe_str(
-            item.get("nCodCC")
-            or item.get("codigo_conta_corrente")
-            or item.get("codigo")
-            or item.get("id")
-        ),
+        "omie_id": _safe_str(item.get("nCodCC")),
         "codigo_banco": _safe_str(item.get("codigo_banco")),
         "banco": _safe_str(item.get("descricao")),
         "agencia": _safe_str(item.get("codigo_agencia")),
@@ -451,23 +443,15 @@ async def sync_pedidos(db: Session, client: OmieClient, paginas: int = 3) -> int
     return total
 
 
-async def sync_contas_correntes(db: Session, client: OmieClient, paginas: int = 2) -> int:
+async def sync_contas_correntes(db: Session, client: OmieClient, paginas: int = 1) -> int:
     total = 0
-    for pagina in range(1, paginas + 1):
-        data = await client.listar_contas_correntes(pagina=pagina)
-        items = (
-            data.get("ListarContasCorrentes")
-            or data.get("lista")
-            or data.get("cadastros")
-            or data.get("conta_corrente_cadastro")
-            or data.get("lista_contas_correntes")
-            or []
-        )
-        for item in items:
-            normalized = normalize_conta_corrente(item)
-            if normalized["omie_id"]:
-                upsert_conta_corrente(db, normalized)
-                total += 1
+    data = await client.listar_contas_correntes()
+    items = data.get("ListarContasCorrentes") or []
+    for item in items:
+        normalized = normalize_conta_corrente(item)
+        if normalized["omie_id"]:
+            upsert_conta_corrente(db, normalized)
+            total += 1
     db.commit()
     return total
 
