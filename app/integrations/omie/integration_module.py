@@ -229,6 +229,86 @@ class OmieClient:
             }],
         )
 
+    async def listar_fases(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="crm/fases",
+            call="ListarFases",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def listar_vendedores(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="crm/vendedores",
+            call="ListarVendedores",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def listar_oportunidades_resumo(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="crm/oportunidades-resumo",
+            call="ListarResumoOportunidades",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def resumo_vendas(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="produtos/pedido-resumo",
+            call="ListarResumoPedidos",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def consultar_estoque(self, codigo_produto: int) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="estoque/consulta",
+            call="ConsultarEstoque",
+            param=[{
+                "codigo_produto": codigo_produto,
+            }],
+        )
+
+    async def resumo_estoque(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="estoque/resumo",
+            call="ListarResumoEstoque",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def movimento_estoque(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="estoque/movimento",
+            call="ListarMovimentos",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def listar_produtos(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="geral/produtos",
+            call="ListarProdutos",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+                "apenas_importado_api": "N",
+            }],
+        )
+
 def _safe_str(value: Any) -> Optional[str]:
     if value is None:
         return None
