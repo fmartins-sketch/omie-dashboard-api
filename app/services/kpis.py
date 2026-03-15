@@ -37,6 +37,15 @@ INVESTMENT_CATEGORIES = {
     "IMPLANTACAO",
 }
 
+FASE_LABELS = {
+    "9559746453": "01 Prospect",
+    "9559746454": "02 Qualificação",
+    "9559746455": "03 Apresentação",
+    "9559746456": "04 Proposta",
+    "9559746457": "05 Negociação",
+    "9559746458": "06 Conclusão",
+}
+
 
 def _to_float(value: Any) -> float:
     if value is None:
@@ -67,6 +76,11 @@ def _days_until(target_date_str: Optional[str]) -> Optional[int]:
             pass
 
     return None
+
+
+def _fase_label(codigo: Optional[str]) -> str:
+    codigo_str = str(codigo or "").strip()
+    return f"FASE_OK::{FASE_LABELS.get(codigo_str, codigo_str or 'Sem etapa')}"
 
 
 class KPIService:
@@ -154,14 +168,16 @@ class KPIService:
             status = (row.status_titulo or "").upper()
             if status in {"PAGO", "CANCELADO", "BAIXADO"}:
                 continue
-            rows.append({
-                "fornecedor": row.nome_fornecedor or row.codigo_fornecedor or "Sem fornecedor",
-                "documento": row.numero_documento or "",
-                "vencimento": row.data_vencimento or "",
-                "categoria": row.categoria or "",
-                "valor": round(_to_float(row.valor_saldo or row.valor_documento), 2),
-                "status": row.status_titulo or "",
-            })
+            rows.append(
+                {
+                    "fornecedor": row.nome_fornecedor or row.codigo_fornecedor or "Sem fornecedor",
+                    "documento": row.numero_documento or "",
+                    "vencimento": row.data_vencimento or "",
+                    "categoria": row.categoria or "",
+                    "valor": round(_to_float(row.valor_saldo or row.valor_documento), 2),
+                    "status": row.status_titulo or "",
+                }
+            )
         rows.sort(key=lambda x: x["valor"], reverse=True)
         return rows[:limit]
 
@@ -332,9 +348,10 @@ class KPIService:
     def funil_comercial(self) -> List[Dict[str, Any]]:
         grouped: Dict[str, int] = {}
         for row in self.db.query(Oportunidade).all():
-            etapa = row.etapa or "Sem etapa"
+            etapa = _fase_label(row.etapa)
             grouped[etapa] = grouped.get(etapa, 0) + 1
-        return [{"fase": k, "quantidade": v} for k, v in grouped.items()]
+
+        return [{"fase": k, "quantidade": v} for k, v in sorted(grouped.items(), key=lambda x: x[0])]
 
     def top_vendedores(self, limit: int = 10) -> List[Dict[str, Any]]:
         grouped: Dict[str, Dict[str, Any]] = {}
