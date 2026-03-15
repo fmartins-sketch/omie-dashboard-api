@@ -1,173 +1,50 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Any, Dict
+
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Dict, Any
 
 from app.db.session import get_db
-from app.integrations.omie.integration_module import (
-    init_db,
-    sync_all_modules,
-    ContaReceber,
-    ContaPagar,
-    PedidoVenda,
-    Oportunidade,
-    ContaCorrente,
-    OmieClient,
-    OMIE_APP_KEY,
-    OMIE_APP_SECRET,
-)
+from app.integrations.omie.integration_module import OMIE_APP_KEY, OMIE_APP_SECRET, OmieClient, sync_all_modules
 from app.services.kpis import KPIService
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
 
 @router.get("/health")
-def healthcheck() -> Dict[str, str]:
+def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@router.on_event("startup")
-def startup_init() -> None:
-    init_db()
+@router.post("/sync/omie/full")
+async def sync_omie_full() -> Dict[str, Any]:
+    return await sync_all_modules()
 
 
 @router.get("/dashboard/ceo-real")
-def get_ceo_dashboard_real(
-    empresa: str = "consolidado",
-    periodo: str = "mes_atual",
-    db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+def dashboard_ceo_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
     service = KPIService(db)
-    return service.ceo_dashboard(empresa=empresa, periodo=periodo)
+    return service.ceo_dashboard()
 
 
 @router.get("/dashboard/financeiro-real")
-def get_financeiro_dashboard_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
+def dashboard_financeiro_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
     service = KPIService(db)
     return service.financeiro_dashboard()
 
 
 @router.get("/dashboard/comercial-real")
-def get_comercial_dashboard_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
+def dashboard_comercial_real(db: Session = Depends(get_db)) -> Dict[str, Any]:
     service = KPIService(db)
     return service.comercial_dashboard()
 
 
-@router.post("/sync/omie/full")
-async def run_full_sync() -> Dict[str, Any]:
-    try:
-        result = await sync_all_modules()
-        return {
-            "status": "ok",
-            "message": "Sincronização concluída com sucesso.",
-            "synced": result,
-        }
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Erro ao sincronizar Omie: {str(exc)}")
-
-
-@router.get("/dashboard/resumo-executivo")
-def get_resumo_executivo(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    service = KPIService(db)
-    ceo = service.ceo_dashboard()
-    financeiro = service.financeiro_dashboard()
-    comercial = service.comercial_dashboard()
-
-    return {
-        "ceo": ceo,
-        "financeiro": {
-            "receber_30": ceo.get("receber_30", 0),
-            "pagar_30": ceo.get("pagar_30", 0),
-            "inadimplencia": ceo.get("inadimplencia", 0),
-            "dividas_total": financeiro.get("dividas_total", 0),
-            "dividas_vencidas": financeiro.get("dividas_vencidas", 0),
-            "saldo_total_contas": financeiro.get("saldo_total_contas", 0),
-            "caixa_liquido": financeiro.get("caixa_liquido", 0),
-            "top_inadimplentes": financeiro.get("top_inadimplentes", []),
-            "top_obrigacoes": financeiro.get("top_obrigacoes", []),
-        },
-        "comercial": {
-            "pipeline_bruto": comercial.get("pipeline_bruto", 0),
-            "pipeline_ponderado": comercial.get("pipeline_ponderado", 0),
-            "oportunidades_abertas": comercial.get("oportunidades_abertas", 0),
-            "ticket_medio": comercial.get("ticket_medio", 0),
-        },
-    }
-
-
-@router.get("/debug/receber/first")
-def debug_receber_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    row = db.query(ContaReceber).first()
-    if not row:
-        return {"message": "nenhum registro"}
-    return {
-        "omie_id": row.omie_id,
-        "valor_documento": float(row.valor_documento or 0),
-        "valor_saldo": float(row.valor_saldo or 0),
-        "data_vencimento": row.data_vencimento,
-        "nome_cliente": row.nome_cliente,
-        "payload_json": row.payload_json,
-    }
-
-
-@router.get("/debug/pagar/first")
-def debug_pagar_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    row = db.query(ContaPagar).first()
-    if not row:
-        return {"message": "nenhum registro"}
-    return {
-        "omie_id": row.omie_id,
-        "valor_documento": float(row.valor_documento or 0),
-        "valor_saldo": float(row.valor_saldo or 0),
-        "data_vencimento": row.data_vencimento,
-        "nome_fornecedor": row.nome_fornecedor,
-        "payload_json": row.payload_json,
-    }
-
-
-@router.get("/debug/pedidos/first")
-def debug_pedidos_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    row = db.query(PedidoVenda).first()
-    if not row:
-        return {"message": "nenhum registro"}
-    return {
-        "omie_id": row.omie_id,
-        "numero_pedido": row.numero_pedido,
-        "cliente": row.cliente,
-        "etapa": row.etapa,
-        "status": row.status,
-        "data_emissao": row.data_emissao,
-        "valor_total": float(row.valor_total or 0),
-        "payload_json": row.payload_json,
-    }
-
-
-@router.get("/debug/oportunidades/first")
-def debug_oportunidades_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    row = db.query(Oportunidade).first()
-    if not row:
-        return {"message": "nenhum registro"}
-    return {
-        "omie_id": row.omie_id,
-        "titulo": row.titulo,
-        "cliente": row.cliente,
-        "etapa": row.etapa,
-        "vendedor": row.vendedor,
-        "previsao_fechamento": row.previsao_fechamento,
-        "valor_total": float(row.valor_total or 0),
-        "probabilidade": float(row.probabilidade or 0),
-        "valor_ponderado": float(row.valor_ponderado or 0),
-        "status": row.status,
-        "payload_json": row.payload_json,
-    }
-
-
 @router.get("/debug/contas-correntes/first")
 def debug_contas_correntes_first(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from app.integrations.omie.integration_module import ContaCorrente
+
     row = db.query(ContaCorrente).first()
     if not row:
-        return {"message": "nenhum registro"}
+        return {"status": "nenhum registro"}
     return {
         "omie_id": row.omie_id,
         "banco": row.banco,
@@ -175,202 +52,10 @@ def debug_contas_correntes_first(db: Session = Depends(get_db)) -> Dict[str, Any
         "conta": row.conta,
         "descricao": row.descricao,
         "saldo": float(row.saldo or 0),
-        "status": row.status,
-        "payload_json": row.payload_json,
+        "status_conta": row.status,
     }
 
 
-@router.get("/debug/omie/pedidos/raw")
-async def debug_omie_pedidos_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    return await client.listar_pedidos_venda(pagina=1, registros_por_pagina=5)
-
-
-@router.get("/debug/omie/oportunidades/raw")
-async def debug_omie_oportunidades_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    return await client.listar_oportunidades(pagina=1, registros_por_pagina=5)
-
-
-@router.get("/debug/omie/contas-correntes/raw")
-async def debug_omie_contas_correntes_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.listar_contas_correntes()
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "geral/contacorrente",
-            "call": "ListarContasCorrentes",
-        }
-
-@router.get("/debug/omie/contas-correntes/teste")
-async def debug_omie_contas_correntes_teste() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    return await client.call(
-        endpoint="geral/contacorrente",
-        call="ListarContasCorrentes",
-        param=[{}],
-    )
-
-@router.get("/debug/omie/contas-correntes/teste2")
-async def debug_omie_contas_correntes_teste2() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    return await client.call(
-        endpoint="geral/contacorrente",
-        call="ListarContasCorrentes",
-        param=[{"pagina": 1, "registros_por_pagina": 10}],
-    )
-
-@router.get("/debug/omie/contas-correntes/teste3")
-async def debug_omie_contas_correntes_teste3() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    return await client.call(
-        endpoint="geral/contacorrente",
-        call="ListarContasCorrentes",
-        param=[{"nPagina": 1, "nRegPorPagina": 10}],
-    )
-
-
-@router.get("/debug/omie/resumo-estoque/raw")
-async def debug_omie_resumo_estoque_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.resumo_estoque(pagina=1, registros_por_pagina=5)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "estoque/resumo",
-            "call": "ListarResumoEstoque",
-        }
-
-
-@router.get("/debug/omie/movimentos-estoque/raw")
-async def debug_omie_movimentos_estoque_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.movimentacoes_estoque(pagina=1, registros_por_pagina=5)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "estoque/movimento",
-            "call": "ListarMovimentos",
-        }
-
-@router.get("/debug/omie/fases/raw")
-async def debug_omie_fases_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.listar_fases(pagina=1, registros_por_pagina=10)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "crm/fases",
-            "call": "ListarFases",
-        }
-
-
-@router.get("/debug/omie/vendedores/raw")
-async def debug_omie_vendedores_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.listar_vendedores(pagina=1, registros_por_pagina=10)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "crm/vendedores",
-            "call": "ListarVendedores",
-        }
-
-
-@router.get("/debug/omie/oportunidades-resumo/raw")
-async def debug_omie_oportunidades_resumo_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.listar_oportunidades_resumo(pagina=1, registros_por_pagina=10)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "crm/oportunidades-resumo",
-            "call": "ListarResumoOportunidades",
-        }
-
-
-@router.get("/debug/omie/resumo-vendas/raw")
-async def debug_omie_resumo_vendas_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.resumo_vendas(pagina=1, registros_por_pagina=10)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "produtos/pedido-resumo",
-            "call": "ListarResumoPedidos",
-        }
-
-
-@router.get("/debug/omie/produtos/raw")
-async def debug_omie_produtos_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.listar_produtos(pagina=1, registros_por_pagina=10)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "geral/produtos",
-            "call": "ListarProdutos",
-        }
-
-
-@router.get("/debug/omie/resumo-estoque/raw")
-async def debug_omie_resumo_estoque_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.resumo_estoque(pagina=1, registros_por_pagina=10)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "estoque/resumo",
-            "call": "ListarResumoEstoque",
-        }
-
-
-@router.get("/debug/omie/movimento-estoque/raw")
-async def debug_omie_movimento_estoque_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.movimento_estoque(pagina=1, registros_por_pagina=10)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "estoque/movimento",
-            "call": "ListarMovimentos",
-        }
-
-
-@router.get("/debug/omie/consulta-estoque/raw/{codigo_produto}")
-async def debug_omie_consulta_estoque_raw(codigo_produto: int) -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    try:
-        return await client.consultar_estoque(codigo_produto=codigo_produto)
-    except Exception as exc:
-        return {
-            "status": "erro",
-            "erro": str(exc),
-            "endpoint": "estoque/consulta",
-            "call": "ConsultarEstoque",
-            "codigo_produto": codigo_produto,
-        }
 @router.get("/debug/omie/fases-crm/raw")
 async def debug_omie_fases_crm_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
@@ -394,5 +79,31 @@ async def debug_omie_contas_crm_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
     try:
         return await client.listar_contas_crm(pagina=1, registros_por_pagina=20)
+    except Exception as exc:
+        return {"status": "erro", "erro": str(exc)}
+
+
+@router.get("/debug/omie/crm-usuarios/raw")
+async def debug_omie_crm_usuarios_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    try:
+        return await client.call(
+            endpoint="crm/usuarios",
+            call="ListarUsuarios",
+            param=[{"pagina": 1, "registros_por_pagina": 20}],
+        )
+    except Exception as exc:
+        return {"status": "erro", "erro": str(exc)}
+
+
+@router.get("/debug/omie/vendas-vendedores/raw")
+async def debug_omie_vendas_vendedores_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    try:
+        return await client.call(
+            endpoint="geral/vendedores",
+            call="ListarVendedores",
+            param=[{"pagina": 1, "registros_por_pagina": 20}],
+        )
     except Exception as exc:
         return {"status": "erro", "erro": str(exc)}
