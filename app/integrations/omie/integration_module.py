@@ -103,6 +103,45 @@ class ContaCorrente(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class CRMFase(Base):
+    __tablename__ = "crm_fases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    omie_id = Column(String(100), unique=True, index=True, nullable=False)
+    nome = Column(String(255), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CRMVendedor(Base):
+    __tablename__ = "crm_vendedores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    omie_id = Column(String(100), unique=True, index=True, nullable=False)
+    nome = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    status = Column(String(50), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CRMConta(Base):
+    __tablename__ = "crm_contas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    omie_id = Column(String(100), unique=True, index=True, nullable=False)
+    nome = Column(String(255), nullable=True)
+    documento = Column(String(100), nullable=True)
+    cidade = Column(String(100), nullable=True)
+    estado = Column(String(20), nullable=True)
+    status = Column(String(50), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
@@ -189,45 +228,6 @@ class OmieClient:
                 "registros_por_pagina": registros_por_pagina,
             }],
         )
-    async def listar_produtos(self, pagina: int = 1, registros_por_pagina: int = 20) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="geral/produtos",
-            call="ListarProdutos",
-            param=[{
-                "pagina": pagina,
-                "registros_por_pagina": registros_por_pagina,
-                "apenas_importado_api": "N",
-            }],
-        )
-
-    async def consultar_estoque(self, codigo_produto: int) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="estoque/consulta",
-            call="ConsultarEstoque",
-            param=[{
-                "codigo_produto": codigo_produto,
-            }],
-        )
-
-    async def resumo_estoque(self, pagina: int = 1, registros_por_pagina: int = 20) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="estoque/resumo",
-            call="ListarResumoEstoque",
-            param=[{
-                "pagina": pagina,
-                "registros_por_pagina": registros_por_pagina,
-            }],
-        )
-
-    async def movimentacoes_estoque(self, pagina: int = 1, registros_por_pagina: int = 20) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="estoque/movimento",
-            call="ListarMovimentos",
-            param=[{
-                "pagina": pagina,
-                "registros_por_pagina": registros_por_pagina,
-            }],
-        )
 
     async def listar_fases(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
         return await self.call(
@@ -239,7 +239,7 @@ class OmieClient:
             }],
         )
 
-    async def listar_vendedores(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+    async def listar_vendedores_crm(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
         return await self.call(
             endpoint="crm/vendedores",
             call="ListarVendedores",
@@ -249,65 +249,16 @@ class OmieClient:
             }],
         )
 
-    async def listar_oportunidades_resumo(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+    async def listar_contas_crm(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
         return await self.call(
-            endpoint="crm/oportunidades-resumo",
-            call="ListarResumoOportunidades",
+            endpoint="crm/contas",
+            call="ListarContas",
             param=[{
                 "pagina": pagina,
                 "registros_por_pagina": registros_por_pagina,
             }],
         )
 
-    async def resumo_vendas(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="produtos/pedido-resumo",
-            call="ListarResumoPedidos",
-            param=[{
-                "pagina": pagina,
-                "registros_por_pagina": registros_por_pagina,
-            }],
-        )
-
-    async def consultar_estoque(self, codigo_produto: int) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="estoque/consulta",
-            call="ConsultarEstoque",
-            param=[{
-                "codigo_produto": codigo_produto,
-            }],
-        )
-
-    async def resumo_estoque(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="estoque/resumo",
-            call="ListarResumoEstoque",
-            param=[{
-                "pagina": pagina,
-                "registros_por_pagina": registros_por_pagina,
-            }],
-        )
-
-    async def movimento_estoque(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="estoque/movimento",
-            call="ListarMovimentos",
-            param=[{
-                "pagina": pagina,
-                "registros_por_pagina": registros_por_pagina,
-            }],
-        )
-
-    async def listar_produtos(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="geral/produtos",
-            call="ListarProdutos",
-            param=[{
-                "pagina": pagina,
-                "registros_por_pagina": registros_por_pagina,
-                "apenas_importado_api": "N",
-            }],
-        )
 
 def _safe_str(value: Any) -> Optional[str]:
     if value is None:
@@ -343,9 +294,7 @@ def normalize_receber(item: Dict[str, Any]) -> Dict[str, Any]:
         "omie_id": _safe_str(omie_id),
         "codigo_cliente": _safe_str(item.get("codigo_cliente_fornecedor")),
         "nome_cliente": _safe_str(nome_cliente),
-        "numero_documento": _safe_str(
-            item.get("numero_documento_fiscal") or item.get("numero_documento")
-        ),
+        "numero_documento": _safe_str(item.get("numero_documento_fiscal") or item.get("numero_documento")),
         "status_titulo": _safe_str(item.get("status_titulo")),
         "categoria": _safe_str(item.get("codigo_categoria")),
         "data_vencimento": _safe_str(data_vencimento),
@@ -377,9 +326,7 @@ def normalize_pagar(item: Dict[str, Any]) -> Dict[str, Any]:
         "omie_id": _safe_str(omie_id),
         "codigo_fornecedor": _safe_str(item.get("codigo_cliente_fornecedor")),
         "nome_fornecedor": _safe_str(nome_fornecedor),
-        "numero_documento": _safe_str(
-            item.get("numero_documento_fiscal") or item.get("numero_documento")
-        ),
+        "numero_documento": _safe_str(item.get("numero_documento_fiscal") or item.get("numero_documento")),
         "status_titulo": _safe_str(item.get("status_titulo")),
         "categoria": _safe_str(item.get("codigo_categoria")),
         "data_vencimento": _safe_str(data_vencimento),
@@ -463,6 +410,55 @@ def normalize_conta_corrente(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def normalize_fase(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "omie_id": _safe_str(item.get("cCodigo")),
+        "nome": _safe_str(item.get("cDescricao")),
+        "payload_json": str(item),
+    }
+
+
+def normalize_vendedor_crm(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "omie_id": _safe_str(
+            item.get("nCodVendedor")
+            or item.get("codigo")
+            or item.get("cCodigo")
+            or item.get("id")
+        ),
+        "nome": _safe_str(
+            item.get("cNome")
+            or item.get("nome")
+            or item.get("cDescricao")
+            or item.get("descricao")
+        ),
+        "email": _safe_str(item.get("cEmail") or item.get("email")),
+        "status": _safe_str(item.get("status") or item.get("cStatus") or "ATIVO"),
+        "payload_json": str(item),
+    }
+
+
+def normalize_conta_crm(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "omie_id": _safe_str(
+            item.get("nCodConta")
+            or item.get("codigo")
+            or item.get("id")
+        ),
+        "nome": _safe_str(
+            item.get("cNome")
+            or item.get("nome_fantasia")
+            or item.get("razao_social")
+            or item.get("nome")
+        ),
+        "documento": _safe_str(item.get("cnpj_cpf") or item.get("documento")),
+        "cidade": _safe_str(item.get("cidade")),
+        "estado": _safe_str(item.get("estado")),
+        "status": _safe_str(item.get("status") or "ATIVO"),
+        "payload_json": str(item),
+    }
+
+
 def upsert_conta_receber(db: Session, normalized: Dict[str, Any]) -> None:
     existing = db.query(ContaReceber).filter(ContaReceber.omie_id == normalized["omie_id"]).first()
     if existing:
@@ -506,6 +502,33 @@ def upsert_conta_corrente(db: Session, normalized: Dict[str, Any]) -> None:
             setattr(existing, key, value)
     else:
         db.add(ContaCorrente(**normalized))
+
+
+def upsert_fase(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(CRMFase).filter(CRMFase.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(CRMFase(**normalized))
+
+
+def upsert_vendedor_crm(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(CRMVendedor).filter(CRMVendedor.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(CRMVendedor(**normalized))
+
+
+def upsert_conta_crm(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(CRMConta).filter(CRMConta.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(CRMConta(**normalized))
 
 
 async def sync_contas_receber(db: Session, client: OmieClient, paginas: int = 3) -> int:
@@ -575,7 +598,48 @@ async def sync_contas_correntes(db: Session, client: OmieClient, paginas: int = 
             total += 1
     db.commit()
     return total
-    
+
+
+async def sync_fases(db: Session, client: OmieClient, paginas: int = 1) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_fases(pagina=pagina)
+        items = data.get("cadastros") or data.get("fases") or data.get("lista_fases") or []
+        for item in items:
+            normalized = normalize_fase(item)
+            if normalized["omie_id"]:
+                upsert_fase(db, normalized)
+                total += 1
+    db.commit()
+    return total
+
+
+async def sync_vendedores_crm(db: Session, client: OmieClient, paginas: int = 2) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_vendedores_crm(pagina=pagina)
+        items = data.get("cadastros") or data.get("vendedores") or data.get("lista_vendedores") or []
+        for item in items:
+            normalized = normalize_vendedor_crm(item)
+            if normalized["omie_id"]:
+                upsert_vendedor_crm(db, normalized)
+                total += 1
+    db.commit()
+    return total
+
+
+async def sync_contas_crm(db: Session, client: OmieClient, paginas: int = 3) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_contas_crm(pagina=pagina)
+        items = data.get("cadastros") or data.get("contas") or data.get("lista_contas") or []
+        for item in items:
+            normalized = normalize_conta_crm(item)
+            if normalized["omie_id"]:
+                upsert_conta_crm(db, normalized)
+                total += 1
+    db.commit()
+    return total
 
 
 async def sync_all_modules() -> Dict[str, int]:
@@ -587,7 +651,30 @@ async def sync_all_modules() -> Dict[str, int]:
         pagar = await sync_contas_pagar(db, client)
         oportunidades = await sync_oportunidades(db, client)
         pedidos = await sync_pedidos(db, client)
-        contas_correntes = await sync_contas_correntes(db, client)
+
+        contas_correntes = 0
+        try:
+            contas_correntes = await sync_contas_correntes(db, client)
+        except Exception:
+            contas_correntes = 0
+
+        fases = 0
+        try:
+            fases = await sync_fases(db, client)
+        except Exception:
+            fases = 0
+
+        vendedores_crm = 0
+        try:
+            vendedores_crm = await sync_vendedores_crm(db, client)
+        except Exception:
+            vendedores_crm = 0
+
+        contas_crm = 0
+        try:
+            contas_crm = await sync_contas_crm(db, client)
+        except Exception:
+            contas_crm = 0
 
         return {
             "receber": receber,
@@ -595,6 +682,9 @@ async def sync_all_modules() -> Dict[str, int]:
             "oportunidades": oportunidades,
             "pedidos": pedidos,
             "contas_correntes": contas_correntes,
+            "fases": fases,
+            "vendedores_crm": vendedores_crm,
+            "contas_crm": contas_crm,
         }
     finally:
         db.close()
