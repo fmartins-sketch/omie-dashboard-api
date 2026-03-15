@@ -259,6 +259,7 @@ async def debug_omie_movimentos_estoque_raw() -> Dict[str, Any]:
             "endpoint": "estoque/movimento",
             "call": "ListarMovimentos",
         }
+
 @router.get("/debug/omie/fases/raw")
 async def debug_omie_fases_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
