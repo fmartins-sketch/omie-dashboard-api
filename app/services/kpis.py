@@ -46,6 +46,23 @@ FASE_LABELS = {
     "9559746458": "06 Conclusão",
 }
 
+# Ajuste estes nomes conforme você for identificando no Omie
+VENDEDOR_LABELS = {
+    "9559847429": "Vendedor 9559847429",
+    "9559847723": "Vendedor 9559847723",
+}
+
+# Ajuste estes nomes conforme você for identificando no Omie
+CLIENTE_LABELS = {
+    "9598148007": "Cliente 9598148007",
+    "9570355484": "Cliente 9570355484",
+    "9559965455": "Cliente 9559965455",
+    "9559965526": "Cliente 9559965526",
+    "9559965361": "Cliente 9559965361",
+    "9562516577": "Cliente 9562516577",
+    "9559965560": "Cliente 9559965560",
+}
+
 
 def _to_float(value: Any) -> float:
     if value is None:
@@ -81,6 +98,16 @@ def _days_until(target_date_str: Optional[str]) -> Optional[int]:
 def _fase_label(codigo: Optional[str]) -> str:
     codigo_str = str(codigo or "").strip()
     return FASE_LABELS.get(codigo_str, codigo_str or "Sem etapa")
+
+
+def _vendedor_label(codigo: Optional[str]) -> str:
+    codigo_str = str(codigo or "").strip()
+    return VENDEDOR_LABELS.get(codigo_str, codigo_str or "Sem vendedor")
+
+
+def _cliente_label(codigo: Optional[str]) -> str:
+    codigo_str = str(codigo or "").strip()
+    return CLIENTE_LABELS.get(codigo_str, codigo_str or "Sem cliente")
 
 
 class KPIService:
@@ -356,7 +383,7 @@ class KPIService:
     def top_vendedores(self, limit: int = 10) -> List[Dict[str, Any]]:
         grouped: Dict[str, Dict[str, Any]] = {}
         for row in self.db.query(Oportunidade).all():
-            vendedor = row.vendedor or "Sem vendedor"
+            vendedor = _vendedor_label(row.vendedor)
             grouped.setdefault(vendedor, {"nome": vendedor, "receita": 0.0, "pipeline": 0.0, "qtd": 0})
             grouped[vendedor]["receita"] += _to_float(row.valor_total)
             grouped[vendedor]["pipeline"] += _to_float(row.valor_ponderado)
@@ -366,7 +393,7 @@ class KPIService:
     def top_clientes(self, limit: int = 10) -> List[Dict[str, Any]]:
         grouped: Dict[str, float] = {}
         for row in self.db.query(PedidoVenda).all():
-            cliente = row.cliente or "Sem cliente"
+            cliente = _cliente_label(row.cliente)
             grouped[cliente] = grouped.get(cliente, 0.0) + _to_float(row.valor_total)
         return [{"nome": k, "receita": round(v, 2)} for k, v in sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]]
 
