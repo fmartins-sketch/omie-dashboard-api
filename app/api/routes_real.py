@@ -371,3 +371,28 @@ async def debug_omie_consulta_estoque_raw(codigo_produto: int) -> Dict[str, Any]
             "call": "ConsultarEstoque",
             "codigo_produto": codigo_produto,
         }
+@router.get("/debug/omie/fases-crm/raw")
+async def debug_omie_fases_crm_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    try:
+        return await client.listar_fases(pagina=1, registros_por_pagina=20)
+    except Exception as exc:
+        return {"status": "erro", "erro": str(exc)}
+
+
+@router.get("/debug/omie/vendedores-crm/raw")
+async def debug_omie_vendedores_crm_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    try:
+        return await client.listar_vendedores_crm(pagina=1, registros_por_pagina=20)
+    except Exception as exc:
+        return {"status": "erro", "erro": str(exc)}
+
+
+@router.get("/debug/omie/contas-crm/raw")
+async def debug_omie_contas_crm_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    try:
+        return await client.listar_contas_crm(pagina=1, registros_por_pagina=20)
+    except Exception as exc:
+        return {"status": "erro", "erro": str(exc)}
