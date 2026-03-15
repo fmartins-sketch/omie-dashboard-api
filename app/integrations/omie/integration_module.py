@@ -465,12 +465,7 @@ async def sync_all_modules() -> Dict[str, int]:
         pagar = await sync_contas_pagar(db, client)
         oportunidades = await sync_oportunidades(db, client)
         pedidos = await sync_pedidos(db, client)
-
-        contas_correntes = 0
-        try:
-            contas_correntes = await sync_contas_correntes(db, client)
-        except Exception:
-            contas_correntes = 0
+        contas_correntes = await sync_contas_correntes(db, client)
 
         return {
             "receber": receber,
