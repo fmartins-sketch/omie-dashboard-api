@@ -195,7 +195,15 @@ async def debug_omie_oportunidades_raw() -> Dict[str, Any]:
 @router.get("/debug/omie/contas-correntes/raw")
 async def debug_omie_contas_correntes_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    return await client.listar_contas_correntes(pagina=1, registros_por_pagina=10)
+    try:
+        return await client.listar_contas_correntes()
+    except Exception as exc:
+        return {
+            "status": "erro",
+            "erro": str(exc),
+            "endpoint": "geral/contacorrente",
+            "call": "ListarContasCorrentes",
+        }
 
 @router.get("/debug/omie/contas-correntes/teste")
 async def debug_omie_contas_correntes_teste() -> Dict[str, Any]:
@@ -223,7 +231,3 @@ async def debug_omie_contas_correntes_teste3() -> Dict[str, Any]:
         call="ListarContasCorrentes",
         param=[{"nPagina": 1, "nRegPorPagina": 10}],
     )
-@router.get("/debug/omie/contas-correntes/raw")
-async def debug_omie_contas_correntes_raw() -> Dict[str, Any]:
-    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
-    return await client.listar_contas_correntes()
