@@ -189,7 +189,45 @@ class OmieClient:
                 "registros_por_pagina": registros_por_pagina,
             }],
         )
+    async def listar_produtos(self, pagina: int = 1, registros_por_pagina: int = 20) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="geral/produtos",
+            call="ListarProdutos",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+                "apenas_importado_api": "N",
+            }],
+        )
 
+    async def consultar_estoque(self, codigo_produto: int) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="estoque/consulta",
+            call="ConsultarEstoque",
+            param=[{
+                "codigo_produto": codigo_produto,
+            }],
+        )
+
+    async def resumo_estoque(self, pagina: int = 1, registros_por_pagina: int = 20) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="estoque/resumo",
+            call="ListarResumoEstoque",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def movimentacoes_estoque(self, pagina: int = 1, registros_por_pagina: int = 20) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="estoque/movimento",
+            call="ListarMovimentos",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
 
 def _safe_str(value: Any) -> Optional[str]:
     if value is None:
