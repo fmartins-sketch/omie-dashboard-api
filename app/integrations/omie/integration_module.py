@@ -180,13 +180,15 @@ class OmieClient:
             }],
         )
 
-    async def listar_contas_correntes(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
-        return await self.call(
-            endpoint="geral/contacorrente",
-            call="ListarContasCorrentes",
-            param=[{}],
-        )
-
+async def listar_contas_correntes(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+    return await self.call(
+        endpoint="geral/contacorrente",
+        call="ListarContasCorrentes",
+        param=[{
+            "pagina": pagina,
+            "registros_por_pagina": registros_por_pagina,
+        }],
+    )
 
 def _safe_str(value: Any) -> Optional[str]:
     if value is None:
@@ -454,6 +456,7 @@ async def sync_contas_correntes(db: Session, client: OmieClient, paginas: int = 
             total += 1
     db.commit()
     return total
+    
 
 
 async def sync_all_modules() -> Dict[str, int]:
