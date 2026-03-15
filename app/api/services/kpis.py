@@ -82,7 +82,6 @@ def _fase_label(codigo: Optional[str]) -> str:
     codigo_str = str(codigo or "").strip()
     return FASE_LABELS.get(codigo_str, codigo_str or "Sem etapa")
 
-
 class KPIService:
     def __init__(self, db: Session):
         self.db = db
