@@ -223,3 +223,7 @@ async def debug_omie_contas_correntes_teste3() -> Dict[str, Any]:
         call="ListarContasCorrentes",
         param=[{"nPagina": 1, "nRegPorPagina": 10}],
     )
+@router.get("/debug/omie/contas-correntes/raw")
+async def debug_omie_contas_correntes_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    return await client.listar_contas_correntes()
