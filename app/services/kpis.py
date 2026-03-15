@@ -80,7 +80,7 @@ def _days_until(target_date_str: Optional[str]) -> Optional[int]:
 
 def _fase_label(codigo: Optional[str]) -> str:
     codigo_str = str(codigo or "").strip()
-    return f"FASE_OK::{FASE_LABELS.get(codigo_str, codigo_str or 'Sem etapa')}"
+    return FASE_LABELS.get(codigo_str, codigo_str or "Sem etapa")
 
 
 class KPIService:
