@@ -180,6 +180,16 @@ class OmieClient:
             }],
         )
 
+    async def listar_contas_correntes(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="geral/contacorrente",
+            call="ListarContasCorrentes",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
 async def listar_contas_correntes(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
     return await self.call(
         endpoint="geral/contacorrente",
