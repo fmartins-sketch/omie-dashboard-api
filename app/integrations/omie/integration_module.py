@@ -239,15 +239,15 @@ class OmieClient:
             }],
         )
 
-async def listar_vendedores_crm(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
-    return await self.call(
-        endpoint="crm/usuarios",
-        call="ListarUsuarios",
-        param=[{
-            "pagina": pagina,
-            "registros_por_pagina": registros_por_pagina,
-        }],
-    )
+    async def listar_vendedores_crm(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="crm/usuarios",
+            call="ListarUsuarios",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+            }],
+        )
 
     async def listar_contas_crm(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
         return await self.call(
@@ -417,6 +417,7 @@ def normalize_fase(item: Dict[str, Any]) -> Dict[str, Any]:
         "payload_json": str(item),
     }
 
+
 def normalize_vendedor_crm(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "omie_id": _safe_str(item.get("nCodigo")),
@@ -425,7 +426,8 @@ def normalize_vendedor_crm(item: Dict[str, Any]) -> Dict[str, Any]:
         "status": "ATIVO",
         "payload_json": str(item),
     }
-    
+
+
 def normalize_conta_crm(item: Dict[str, Any]) -> Dict[str, Any]:
     identificacao = item.get("identificacao", {}) or {}
     endereco = item.get("endereco", {}) or {}
@@ -608,6 +610,7 @@ async def sync_vendedores_crm(db: Session, client: OmieClient, paginas: int = 2)
                 total += 1
     db.commit()
     return total
+
 
 async def sync_contas_crm(db: Session, client: OmieClient, paginas: int = 3) -> int:
     total = 0
