@@ -90,28 +90,28 @@ class KPIService:
             return row.nome
         return codigo_str or "Sem vendedor"
 
-def _cliente_label(self, codigo: Optional[str]) -> str:
-    codigo_str = str(codigo or "").strip()
-    if not codigo_str:
-        return "Sem cliente"
+    def _cliente_label(self, codigo: Optional[str]) -> str:
+        codigo_str = str(codigo or "").strip()
+        if not codigo_str:
+            return "Sem cliente"
 
-    # 1) tenta resolver pelo financeiro, que usa a mesma chave dos pedidos
-    row_receber = (
-        self.db.query(ContaReceber)
-        .filter(ContaReceber.codigo_cliente == codigo_str)
-        .filter(ContaReceber.nome_cliente.isnot(None))
-        .first()
-    )
-    if row_receber and row_receber.nome_cliente:
-        return row_receber.nome_cliente
+        row_receber = (
+            self.db.query(ContaReceber)
+            .filter(ContaReceber.codigo_cliente == codigo_str)
+            .first()
+        )
+        if row_receber and row_receber.nome_cliente:
+            return row_receber.nome_cliente
 
-    # 2) fallback para CRM Contas
-    row_crm = self.db.query(CRMConta).filter(CRMConta.omie_id == codigo_str).first()
-    if row_crm and row_crm.nome:
-        return row_crm.nome
+        row_crm = (
+            self.db.query(CRMConta)
+            .filter(CRMConta.omie_id == codigo_str)
+            .first()
+        )
+        if row_crm and row_crm.nome:
+            return row_crm.nome
 
-    # 3) fallback final
-    return codigo_str
+        return codigo_str
 
     def total_receber_em_aberto(self) -> float:
         total = 0.0
