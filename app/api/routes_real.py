@@ -64,6 +64,7 @@ async def debug_omie_fases_crm_raw() -> Dict[str, Any]:
     except Exception as exc:
         return {"status": "erro", "erro": str(exc)}
 
+
 @router.get("/debug/omie/vendedores-crm/raw")
 async def debug_omie_vendedores_crm_raw() -> Dict[str, Any]:
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
@@ -71,6 +72,7 @@ async def debug_omie_vendedores_crm_raw() -> Dict[str, Any]:
         return await client.listar_vendedores_crm(pagina=1, registros_por_pagina=20)
     except Exception as exc:
         return {"status": "erro", "erro": str(exc)}
+
 
 @router.get("/debug/omie/contas-crm/raw")
 async def debug_omie_contas_crm_raw() -> Dict[str, Any]:
@@ -103,5 +105,14 @@ async def debug_omie_vendas_vendedores_raw() -> Dict[str, Any]:
             call="ListarVendedores",
             param=[{"pagina": 1, "registros_por_pagina": 20}],
         )
+    except Exception as exc:
+        return {"status": "erro", "erro": str(exc)}
+
+
+@router.get("/debug/omie/clientes-fornecedores/raw")
+async def debug_omie_clientes_fornecedores_raw() -> Dict[str, Any]:
+    client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
+    try:
+        return await client.listar_clientes_fornecedores(pagina=1, registros_por_pagina=20)
     except Exception as exc:
         return {"status": "erro", "erro": str(exc)}
