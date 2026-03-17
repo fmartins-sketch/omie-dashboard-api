@@ -142,6 +142,22 @@ class CRMConta(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class CadastroParceiro(Base):
+    __tablename__ = "cadastro_parceiros"
+
+    id = Column(Integer, primary_key=True, index=True)
+    omie_id = Column(String(100), unique=True, index=True, nullable=False)
+    nome = Column(String(255), nullable=True)
+    documento = Column(String(100), nullable=True)
+    cidade = Column(String(100), nullable=True)
+    estado = Column(String(20), nullable=True)
+    email = Column(String(255), nullable=True)
+    tipo = Column(String(50), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
@@ -256,6 +272,17 @@ class OmieClient:
             param=[{
                 "pagina": pagina,
                 "registros_por_pagina": registros_por_pagina,
+            }],
+        )
+
+    async def listar_clientes_fornecedores(self, pagina: int = 1, registros_por_pagina: int = 50) -> Dict[str, Any]:
+        return await self.call(
+            endpoint="geral/clientesfornecedores",
+            call="ListarClientesFornecedor",
+            param=[{
+                "pagina": pagina,
+                "registros_por_pagina": registros_por_pagina,
+                "apenas_importado_api": "N",
             }],
         )
 
@@ -443,6 +470,30 @@ def normalize_conta_crm(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def normalize_cadastro_parceiro(item: Dict[str, Any]) -> Dict[str, Any]:
+    endereco = item.get("endereco", {}) or {}
+    email = item.get("email", {}) or {}
+
+    return {
+        "omie_id": _safe_str(
+            item.get("codigo_cliente_fornecedor")
+            or item.get("nCod")
+            or item.get("codigo")
+        ),
+        "nome": _safe_str(
+            item.get("nome_fantasia")
+            or item.get("razao_social")
+            or item.get("nome")
+        ),
+        "documento": _safe_str(item.get("cnpj_cpf")),
+        "cidade": _safe_str(endereco.get("cidade")),
+        "estado": _safe_str(endereco.get("estado")),
+        "email": _safe_str(email.get("email_fatura") or email.get("email")),
+        "tipo": _safe_str(item.get("tipo_cliente_fornecedor") or item.get("tipo")),
+        "payload_json": str(item),
+    }
+
+
 def upsert_conta_receber(db: Session, normalized: Dict[str, Any]) -> None:
     existing = db.query(ContaReceber).filter(ContaReceber.omie_id == normalized["omie_id"]).first()
     if existing:
@@ -513,6 +564,15 @@ def upsert_conta_crm(db: Session, normalized: Dict[str, Any]) -> None:
             setattr(existing, key, value)
     else:
         db.add(CRMConta(**normalized))
+
+
+def upsert_cadastro_parceiro(db: Session, normalized: Dict[str, Any]) -> None:
+    existing = db.query(CadastroParceiro).filter(CadastroParceiro.omie_id == normalized["omie_id"]).first()
+    if existing:
+        for key, value in normalized.items():
+            setattr(existing, key, value)
+    else:
+        db.add(CadastroParceiro(**normalized))
 
 
 async def sync_contas_receber(db: Session, client: OmieClient, paginas: int = 3) -> int:
@@ -626,6 +686,26 @@ async def sync_contas_crm(db: Session, client: OmieClient, paginas: int = 3) -> 
     return total
 
 
+async def sync_clientes_fornecedores(db: Session, client: OmieClient, paginas: int = 4) -> int:
+    total = 0
+    for pagina in range(1, paginas + 1):
+        data = await client.listar_clientes_fornecedores(pagina=pagina)
+        items = (
+            data.get("clientes_cadastro")
+            or data.get("clientes_fornecedores_cadastro")
+            or data.get("cadastros")
+            or data.get("clientes")
+            or []
+        )
+        for item in items:
+            normalized = normalize_cadastro_parceiro(item)
+            if normalized["omie_id"]:
+                upsert_cadastro_parceiro(db, normalized)
+                total += 1
+    db.commit()
+    return total
+
+
 async def sync_all_modules() -> Dict[str, int]:
     init_db()
     client = OmieClient(app_key=OMIE_APP_KEY, app_secret=OMIE_APP_SECRET)
@@ -660,6 +740,12 @@ async def sync_all_modules() -> Dict[str, int]:
         except Exception:
             contas_crm = 0
 
+        clientes_fornecedores = 0
+        try:
+            clientes_fornecedores = await sync_clientes_fornecedores(db, client)
+        except Exception:
+            clientes_fornecedores = 0
+
         return {
             "receber": receber,
             "pagar": pagar,
@@ -669,6 +755,7 @@ async def sync_all_modules() -> Dict[str, int]:
             "fases": fases,
             "vendedores_crm": vendedores_crm,
             "contas_crm": contas_crm,
+            "clientes_fornecedores": clientes_fornecedores,
         }
     finally:
         db.close()
