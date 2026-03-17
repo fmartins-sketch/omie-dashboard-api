@@ -5,6 +5,10 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.integrations.omie.integration_module import (
+    CadastroParceiro,
+    CRMConta,
+    CRMFase,
+    CRMVendedor,
     ContaCorrente,
     ContaPagar,
     ContaReceber,
@@ -35,15 +39,6 @@ INVESTMENT_CATEGORIES = {
     "CAPEX",
     "EQUIPAMENTOS",
     "IMPLANTACAO",
-}
-
-FASE_LABELS = {
-    "9559746453": "01 Prospect",
-    "9559746454": "02 Qualificação",
-    "9559746455": "03 Apresentação",
-    "9559746456": "04 Proposta",
-    "9559746457": "05 Negociação",
-    "9559746458": "06 Conclusão",
 }
 
 
@@ -78,13 +73,54 @@ def _days_until(target_date_str: Optional[str]) -> Optional[int]:
     return None
 
 
-def _fase_label(codigo: Optional[str]) -> str:
-    codigo_str = str(codigo or "").strip()
-    return FASE_LABELS.get(codigo_str, codigo_str or "Sem etapa")
-
 class KPIService:
     def __init__(self, db: Session):
         self.db = db
+
+    def _fase_label(self, codigo: Optional[str]) -> str:
+        codigo_str = str(codigo or "").strip()
+        row = self.db.query(CRMFase).filter(CRMFase.omie_id == codigo_str).first()
+        if row and row.nome:
+            return row.nome
+        return codigo_str or "Sem etapa"
+
+    def _vendedor_label(self, codigo: Optional[str]) -> str:
+        codigo_str = str(codigo or "").strip()
+        row = self.db.query(CRMVendedor).filter(CRMVendedor.omie_id == codigo_str).first()
+        if row and row.nome:
+            return row.nome
+        return codigo_str or "Sem vendedor"
+
+    def _cliente_label(self, codigo: Optional[str]) -> str:
+        codigo_str = str(codigo or "").strip()
+        if not codigo_str:
+            return "Sem cliente"
+
+        row_parceiro = (
+            self.db.query(CadastroParceiro)
+            .filter(CadastroParceiro.omie_id == codigo_str)
+            .first()
+        )
+        if row_parceiro and row_parceiro.nome:
+            return row_parceiro.nome
+
+        row_receber = (
+            self.db.query(ContaReceber)
+            .filter(ContaReceber.codigo_cliente == codigo_str)
+            .first()
+        )
+        if row_receber and row_receber.nome_cliente:
+            return row_receber.nome_cliente
+
+        row_crm = (
+            self.db.query(CRMConta)
+            .filter(CRMConta.omie_id == codigo_str)
+            .first()
+        )
+        if row_crm and row_crm.nome:
+            return row_crm.nome
+
+        return codigo_str
 
     def total_receber_em_aberto(self) -> float:
         total = 0.0
@@ -345,15 +381,14 @@ class KPIService:
     def funil_comercial(self) -> List[Dict[str, Any]]:
         grouped: Dict[str, int] = {}
         for row in self.db.query(Oportunidade).all():
-            etapa = _fase_label(row.etapa)
+            etapa = self._fase_label(row.etapa)
             grouped[etapa] = grouped.get(etapa, 0) + 1
-
         return [{"fase": k, "quantidade": v} for k, v in sorted(grouped.items(), key=lambda x: x[0])]
 
     def top_vendedores(self, limit: int = 10) -> List[Dict[str, Any]]:
         grouped: Dict[str, Dict[str, Any]] = {}
         for row in self.db.query(Oportunidade).all():
-            vendedor = row.vendedor or "Sem vendedor"
+            vendedor = self._vendedor_label(row.vendedor)
             grouped.setdefault(vendedor, {"nome": vendedor, "receita": 0.0, "pipeline": 0.0, "qtd": 0})
             grouped[vendedor]["receita"] += _to_float(row.valor_total)
             grouped[vendedor]["pipeline"] += _to_float(row.valor_ponderado)
@@ -363,7 +398,7 @@ class KPIService:
     def top_clientes(self, limit: int = 10) -> List[Dict[str, Any]]:
         grouped: Dict[str, float] = {}
         for row in self.db.query(PedidoVenda).all():
-            cliente = row.cliente or "Sem cliente"
+            cliente = self._cliente_label(row.cliente)
             grouped[cliente] = grouped.get(cliente, 0.0) + _to_float(row.valor_total)
         return [{"nome": k, "receita": round(v, 2)} for k, v in sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]]
 
